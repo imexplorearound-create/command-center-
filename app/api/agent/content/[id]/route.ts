@@ -15,11 +15,11 @@ export async function PATCH(
   const body = await request.json();
 
   const data: Record<string, unknown> = {};
-  if (body.status) data.status = body.status;
-  if (body.scriptPath) data.scriptPath = body.scriptPath;
-  if (body.videoPath) data.videoPath = body.videoPath;
-  if (body.platform) data.platform = body.platform;
-  if (body.publishedAt) data.publishedAt = new Date(body.publishedAt);
+  if (body.status !== undefined) data.status = body.status;
+  if (body.scriptPath !== undefined) data.scriptPath = body.scriptPath;
+  if (body.videoPath !== undefined) data.videoPath = body.videoPath;
+  if (body.platform !== undefined) data.platform = body.platform;
+  if (body.publishedAt !== undefined) data.publishedAt = new Date(body.publishedAt);
 
   try {
     const updated = await prisma.contentItem.update({

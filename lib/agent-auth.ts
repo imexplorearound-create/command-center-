@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import crypto from "crypto";
 
 /**
  * Agent API authentication.
@@ -32,11 +33,12 @@ export function authenticateAgent(
   }
 
   const token = auth.slice(7);
-  if (token !== secret) {
+  const tokenBuf = Buffer.from(token);
+  const secretBuf = Buffer.from(secret);
+  if (tokenBuf.length !== secretBuf.length || !crypto.timingSafeEqual(tokenBuf, secretBuf)) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
-  // Agent identifies itself via X-Agent-Id header
   const agentId = request.headers.get("x-agent-id") ?? "unknown";
 
   return { agentId };

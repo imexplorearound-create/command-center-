@@ -16,10 +16,10 @@ export async function PATCH(
   const body = await request.json();
 
   const data: Record<string, unknown> = {};
-  if (body.status) data.status = body.status;
-  if (body.priority) data.priority = body.priority;
-  if (body.devStatus) data.devStatus = body.devStatus;
-  if (body.title) data.title = body.title;
+  if (body.status !== undefined) data.status = body.status;
+  if (body.priority !== undefined) data.priority = body.priority;
+  if (body.devStatus !== undefined) data.devStatus = body.devStatus;
+  if (body.title !== undefined) data.title = body.title;
   if (body.status === "feito") data.completedAt = new Date();
 
   if (body.assignee) {
