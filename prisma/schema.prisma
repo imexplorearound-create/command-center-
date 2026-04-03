@@ -1,0 +1,536 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth ───────────────────────────────────────────────────
+
+enum Role {
+  admin
+  membro
+  cliente
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(300)
+  passwordHash String   @map("password_hash") @db.Text
+  role         Role     @default(membro)
+  isActive     Boolean  @default(true) @map("is_active")
+  personId     String   @unique @map("person_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  person             Person              @relation(fields: [personId], references: [id])
+  projectAssignments UserProjectAccess[]
+
+  @@map("users")
+}
+
+model UserProjectAccess {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@map("user_project_access")
+}
+
+// ─── Projects ───────────────────────────────────────────────
+
+model Project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(200)
+  slug        String   @unique @db.VarChar(100)
+  type        String   @db.VarChar(50)
+  status      String   @default("ativo") @db.VarChar(50)
+  health      String   @default("green") @db.VarChar(20)
+  progress    Int      @default(0)
+  description String?  @db.Text
+  color       String?  @db.VarChar(7)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  phases       ProjectPhase[]
+  objectives   Objective[]
+  tasks        Task[]
+  client       Client?
+  interactions Interaction[]
+  alerts       Alert[]        @relation("AlertProject")
+  contentItems ContentItem[]
+
+  workflowTemplates WorkflowTemplate[]
+  workflowInstances WorkflowInstance[]
+  githubRepos       GithubRepo[]
+  userAccess        UserProjectAccess[]
+
+  @@map("projects")
+}
+
+model ProjectPhase {
+  id          String    @id @default(uuid()) @db.Uuid
+  projectId   String    @map("project_id") @db.Uuid
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  phaseOrder  Int       @map("phase_order")
+  status      String    @default("pendente") @db.VarChar(50)
+  progress    Int       @default(0)
+  startDate   DateTime? @map("start_date") @db.Date
+  endDate     DateTime? @map("end_date") @db.Date
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  project Project @relation(fields: [projectId], references: [id])
+  tasks   Task[]
+
+  @@map("project_phases")
+}
+
+// ─── Objectives ─────────────────────────────────────────────
+
+model Objective {
+  id           String    @id @default(uuid()) @db.Uuid
+  title        String    @db.VarChar(300)
+  targetValue  Decimal?  @map("target_value")
+  currentValue Decimal   @default(0) @map("current_value")
+  unit         String?   @db.VarChar(50)
+  deadline     DateTime? @db.Date
+  projectId    String?   @map("project_id") @db.Uuid
+  status       String    @default("ativo") @db.VarChar(50)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@map("objectives")
+}
+
+// ─── People ─────────────────────────────────────────────────
+
+model Person {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @db.VarChar(200)
+  email          String?  @db.VarChar(300)
+  role           String?  @db.VarChar(200)
+  type           String   @db.VarChar(50)
+  avatarColor    String?  @map("avatar_color") @db.VarChar(7)
+  githubUsername String?  @map("github_username") @db.VarChar(100)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tasks                    Task[]
+  validatedTasks           Task[]                 @relation("TaskValidator")
+  clientContacts           ClientContact[]
+  contentApproved          ContentItem[]
+  user                     User?
+  areasOwned               Area[]                 @relation("AreaOwner")
+  workflowTemplatesCreated WorkflowTemplate[]     @relation("WorkflowCreator")
+  workflowDefaultAssignee  WorkflowTemplateStep[] @relation("StepDefaultAssignee")
+  workflowInstancesStarted WorkflowInstance[]     @relation("WorkflowStarter")
+  githubEvents             GithubEvent[]          @relation("EventAuthor")
+
+  @@map("people")
+}
+
+// ─── Tasks ──────────────────────────────────────────────────
+
+model Task {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String    @db.VarChar(500)
+  description String?   @db.Text
+  projectId   String?   @map("project_id") @db.Uuid
+  areaId      String?   @map("area_id") @db.Uuid
+  phaseId     String?   @map("phase_id") @db.Uuid
+  assigneeId  String?   @map("assignee_id") @db.Uuid
+  status      String    @default("backlog") @db.VarChar(50)
+  priority    String    @default("media") @db.VarChar(20)
+  origin      String?   @db.VarChar(100)
+  originDate  DateTime? @map("origin_date") @db.Date
+  originRef   String?   @map("origin_ref") @db.Text
+  deadline    DateTime? @db.Date
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  daysStale   Int       @default(0) @map("days_stale")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // AI / Trust Score
+  aiExtracted      Boolean   @default(false) @map("ai_extracted")
+  aiConfidence     Decimal?  @map("ai_confidence")
+  validationStatus String    @default("confirmed") @map("validation_status") @db.VarChar(20)
+  validatedById    String?   @map("validated_by") @db.Uuid
+  validatedAt      DateTime? @map("validated_at") @db.Timestamptz
+  originalData     Json?     @map("original_data")
+
+  // GitHub
+  githubBranch       String?   @map("github_branch") @db.VarChar(300)
+  githubPrNumber     Int?      @map("github_pr_number")
+  githubPrStatus     String?   @map("github_pr_status") @db.VarChar(50)
+  githubPrUrl        String?   @map("github_pr_url") @db.Text
+  githubLastCommitAt DateTime? @map("github_last_commit_at") @db.Timestamptz
+  devStatus          String    @default("sem_codigo") @map("dev_status") @db.VarChar(50)
+
+  project   Project?      @relation(fields: [projectId], references: [id])
+  area      Area?         @relation(fields: [areaId], references: [id])
+  phase     ProjectPhase? @relation(fields: [phaseId], references: [id])
+  assignee  Person?       @relation(fields: [assigneeId], references: [id])
+  validator Person?       @relation("TaskValidator", fields: [validatedById], references: [id])
+  alerts    Alert[]       @relation("AlertTask")
+
+  workflowInstanceTasks WorkflowInstanceTask[]
+  githubEvents          GithubEvent[]
+
+  @@index([projectId], map: "idx_tasks_project")
+  @@index([assigneeId], map: "idx_tasks_assignee")
+  @@index([status], map: "idx_tasks_status")
+  @@index([priority], map: "idx_tasks_priority")
+  @@map("tasks")
+}
+
+// ─── Clients ────────────────────────────────────────────────
+
+model Client {
+  id                String    @id @default(uuid()) @db.Uuid
+  companyName       String    @map("company_name") @db.VarChar(300)
+  projectId         String    @unique @map("project_id") @db.Uuid
+  status            String    @default("ativo") @db.VarChar(50)
+  lastInteractionAt DateTime? @map("last_interaction_at") @db.Timestamptz
+  daysSinceContact  Int       @default(0) @map("days_since_contact")
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  project      Project         @relation(fields: [projectId], references: [id])
+  contacts     ClientContact[]
+  interactions Interaction[]   @relation("InteractionClient")
+  alerts       Alert[]         @relation("AlertClient")
+
+  @@map("clients")
+}
+
+model ClientContact {
+  id        String   @id @default(uuid()) @db.Uuid
+  clientId  String   @map("client_id") @db.Uuid
+  personId  String   @map("person_id") @db.Uuid
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  client Client @relation(fields: [clientId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
+
+  @@map("client_contacts")
+}
+
+// ─── Interactions (Client Hub Feed) ─────────────────────────
+
+model Interaction {
+  id              String   @id @default(uuid()) @db.Uuid
+  projectId       String?  @map("project_id") @db.Uuid
+  clientId        String?  @map("client_id") @db.Uuid
+  type            String   @db.VarChar(50)
+  title           String   @db.VarChar(500)
+  body            String?  @db.Text
+  source          String?  @db.VarChar(100)
+  sourceRef       String?  @map("source_ref") @db.Text
+  participants    String[] @db.Uuid
+  interactionDate DateTime @map("interaction_date") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // AI / Trust Score
+  aiExtracted      Boolean   @default(false) @map("ai_extracted")
+  aiConfidence     Decimal?  @map("ai_confidence")
+  validationStatus String    @default("confirmed") @map("validation_status") @db.VarChar(20)
+  validatedById    String?   @map("validated_by") @db.Uuid
+  validatedAt      DateTime? @map("validated_at") @db.Timestamptz
+  originalData     Json?     @map("original_data")
+
+  project Project? @relation(fields: [projectId], references: [id])
+  client  Client?  @relation("InteractionClient", fields: [clientId], references: [id])
+
+  @@index([projectId], map: "idx_interactions_project")
+  @@index([clientId], map: "idx_interactions_client")
+  @@index([interactionDate(sort: Desc)], map: "idx_interactions_date")
+  @@map("interactions")
+}
+
+// ─── Alerts ─────────────────────────────────────────────────
+
+model Alert {
+  id               String   @id @default(uuid()) @db.Uuid
+  type             String   @db.VarChar(50)
+  severity         String   @default("warning") @db.VarChar(20)
+  title            String   @db.VarChar(500)
+  description      String?  @db.Text
+  relatedTaskId    String?  @map("related_task_id") @db.Uuid
+  relatedProjectId String?  @map("related_project_id") @db.Uuid
+  relatedClientId  String?  @map("related_client_id") @db.Uuid
+  isDismissed      Boolean  @default(false) @map("is_dismissed")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  task    Task?    @relation("AlertTask", fields: [relatedTaskId], references: [id])
+  project Project? @relation("AlertProject", fields: [relatedProjectId], references: [id])
+  client  Client?  @relation("AlertClient", fields: [relatedClientId], references: [id])
+
+  @@index([isDismissed], map: "idx_alerts_dismissed")
+  @@map("alerts")
+}
+
+// ─── Content Pipeline ───────────────────────────────────────
+
+model ContentItem {
+  id             String    @id @default(uuid()) @db.Uuid
+  title          String    @db.VarChar(500)
+  format         String?   @db.VarChar(50)
+  status         String    @default("proposta") @db.VarChar(50)
+  sourceCallDate DateTime? @map("source_call_date") @db.Date
+  sourceCallRef  String?   @map("source_call_ref") @db.Text
+  scriptPath     String?   @map("script_path") @db.Text
+  videoPath      String?   @map("video_path") @db.Text
+  platform       String?   @db.VarChar(100)
+  approvedById   String?   @map("approved_by") @db.Uuid
+  approvedAt     DateTime? @map("approved_at") @db.Timestamptz
+  publishedAt    DateTime? @map("published_at") @db.Timestamptz
+  projectId      String?   @map("project_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // AI / Trust Score
+  aiExtracted      Boolean   @default(false) @map("ai_extracted")
+  aiConfidence     Decimal?  @map("ai_confidence")
+  validationStatus String    @default("confirmed") @map("validation_status") @db.VarChar(20)
+  validatedById    String?   @map("validated_by") @db.Uuid
+  validatedAt      DateTime? @map("validated_at") @db.Timestamptz
+  originalData     Json?     @map("original_data")
+
+  approvedBy Person?  @relation(fields: [approvedById], references: [id])
+  project    Project? @relation(fields: [projectId], references: [id])
+
+  @@index([status], map: "idx_content_status")
+  @@map("content_items")
+}
+
+// ─── Trust Scores ───────────────────────────────────────────
+
+model TrustScore {
+  id                 String    @id @default(uuid()) @db.Uuid
+  extractionType     String    @unique @map("extraction_type") @db.VarChar(100)
+  score              Int       @default(0)
+  totalConfirmations Int       @default(0) @map("total_confirmations")
+  totalEdits         Int       @default(0) @map("total_edits")
+  totalRejections    Int       @default(0) @map("total_rejections")
+  lastInteractionAt  DateTime? @map("last_interaction_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("trust_scores")
+}
+
+// ─── Sync Log ───────────────────────────────────────────────
+
+model SyncLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  source         String   @db.VarChar(100)
+  action         String   @db.VarChar(100)
+  status         String   @db.VarChar(50)
+  itemsProcessed Int      @default(0) @map("items_processed")
+  errorMessage   String?  @map("error_message") @db.Text
+  durationMs     Int?     @map("duration_ms")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("sync_log")
+}
+
+// ─── Areas (Operational Areas) ──────────────────────────────
+
+model Area {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(200)
+  slug        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  color       String?  @db.VarChar(7)
+  icon        String?  @db.VarChar(50)
+  ownerId     String?  @map("owner_id") @db.Uuid
+  status      String   @default("ativo") @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  owner             Person?            @relation("AreaOwner", fields: [ownerId], references: [id])
+  tasks             Task[]
+  workflowTemplates WorkflowTemplate[] @relation("TemplateArea")
+  workflowInstances WorkflowInstance[] @relation("InstanceArea")
+
+  @@index([status], map: "idx_areas_status")
+  @@map("areas")
+}
+
+// ─── Workflows ──────────────────────────────────────────────
+
+model WorkflowTemplate {
+  id                    String   @id @default(uuid()) @db.Uuid
+  name                  String   @db.VarChar(300)
+  slug                  String   @unique @db.VarChar(100)
+  description           String?  @db.Text
+  areaId                String?  @map("area_id") @db.Uuid
+  projectId             String?  @map("project_id") @db.Uuid
+  triggerType           String   @default("manual") @map("trigger_type") @db.VarChar(50)
+  triggerConfig         Json?    @map("trigger_config")
+  estimatedDurationDays Int?     @map("estimated_duration_days")
+  isActive              Boolean  @default(true) @map("is_active")
+  version               Int      @default(1)
+  createdById           String?  @map("created_by") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  area      Area?                  @relation("TemplateArea", fields: [areaId], references: [id])
+  project   Project?               @relation(fields: [projectId], references: [id])
+  createdBy Person?                @relation("WorkflowCreator", fields: [createdById], references: [id])
+  steps     WorkflowTemplateStep[]
+  instances WorkflowInstance[]
+
+  @@index([areaId], map: "idx_workflow_templates_area")
+  @@map("workflow_templates")
+}
+
+model WorkflowTemplateStep {
+  id                   String   @id @default(uuid()) @db.Uuid
+  templateId           String   @map("template_id") @db.Uuid
+  stepOrder            Int      @map("step_order")
+  title                String   @db.VarChar(500)
+  description          String?  @db.Text
+  defaultAssigneeRole  String?  @map("default_assignee_role") @db.VarChar(100)
+  defaultAssigneeId    String?  @map("default_assignee_id") @db.Uuid
+  relativeDeadlineDays Int?     @map("relative_deadline_days")
+  priority             String   @default("media") @db.VarChar(20)
+  dependsOn            Int[]    @map("depends_on")
+  isOptional           Boolean  @default(false) @map("is_optional")
+  checklist            Json?
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  template        WorkflowTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  defaultAssignee Person?                @relation("StepDefaultAssignee", fields: [defaultAssigneeId], references: [id])
+  instanceTasks   WorkflowInstanceTask[]
+
+  @@map("workflow_template_steps")
+}
+
+model WorkflowInstance {
+  id          String    @id @default(uuid()) @db.Uuid
+  templateId  String    @map("template_id") @db.Uuid
+  name        String    @db.VarChar(500)
+  context     Json?
+  status      String    @default("em_curso") @db.VarChar(50)
+  progress    Int       @default(0)
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  startedById String?   @map("started_by") @db.Uuid
+  projectId   String?   @map("project_id") @db.Uuid
+  areaId      String?   @map("area_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  template  WorkflowTemplate       @relation(fields: [templateId], references: [id])
+  startedBy Person?                @relation("WorkflowStarter", fields: [startedById], references: [id])
+  project   Project?               @relation(fields: [projectId], references: [id])
+  area      Area?                  @relation("InstanceArea", fields: [areaId], references: [id])
+  tasks     WorkflowInstanceTask[]
+
+  @@index([status], map: "idx_workflow_instances_status")
+  @@index([templateId], map: "idx_workflow_instances_template")
+  @@map("workflow_instances")
+}
+
+model WorkflowInstanceTask {
+  id         String   @id @default(uuid()) @db.Uuid
+  instanceId String   @map("instance_id") @db.Uuid
+  stepId     String?  @map("step_id") @db.Uuid
+  taskId     String?  @map("task_id") @db.Uuid
+  stepOrder  Int      @map("step_order")
+  status     String   @default("pendente") @db.VarChar(50)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  instance WorkflowInstance      @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  step     WorkflowTemplateStep? @relation(fields: [stepId], references: [id])
+  task     Task?                 @relation(fields: [taskId], references: [id])
+
+  @@index([instanceId], map: "idx_workflow_instance_tasks_instance")
+  @@map("workflow_instance_tasks")
+}
+
+// ─── GitHub Integration ─────────────────────────────────────
+
+model GithubRepo {
+  id            String    @id @default(uuid()) @db.Uuid
+  projectId     String?   @map("project_id") @db.Uuid
+  repoFullName  String    @unique @map("repo_full_name") @db.VarChar(300)
+  defaultBranch String    @default("main") @map("default_branch") @db.VarChar(100)
+  webhookSecret String?   @map("webhook_secret") @db.VarChar(200)
+  isActive      Boolean   @default(true) @map("is_active")
+  lastSyncedAt  DateTime? @map("last_synced_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  project Project?          @relation(fields: [projectId], references: [id])
+  events  GithubEvent[]
+  metrics DevMetricsDaily[]
+
+  @@map("github_repos")
+}
+
+model GithubEvent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  repoId             String   @map("repo_id") @db.Uuid
+  eventType          String   @map("event_type") @db.VarChar(50)
+  action             String?  @db.VarChar(50)
+  title              String?  @db.VarChar(500)
+  description        String?  @db.Text
+  author             String?  @db.VarChar(200)
+  authorMappedId     String?  @map("author_mapped_id") @db.Uuid
+  branch             String?  @db.VarChar(300)
+  prNumber           Int?     @map("pr_number")
+  commitSha          String?  @map("commit_sha") @db.VarChar(40)
+  url                String?  @db.Text
+  taskId             String?  @map("task_id") @db.Uuid
+  taskLinkMethod     String?  @map("task_link_method") @db.VarChar(50)
+  taskLinkConfidence Decimal? @map("task_link_confidence")
+  rawPayload         Json?    @map("raw_payload")
+  eventAt            DateTime @map("event_at") @db.Timestamptz
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  repo         GithubRepo @relation(fields: [repoId], references: [id])
+  authorPerson Person?    @relation("EventAuthor", fields: [authorMappedId], references: [id])
+  task         Task?      @relation(fields: [taskId], references: [id])
+
+  @@index([repoId], map: "idx_github_events_repo")
+  @@index([taskId], map: "idx_github_events_task")
+  @@index([eventType], map: "idx_github_events_type")
+  @@index([eventAt(sort: Desc)], map: "idx_github_events_date")
+  @@index([authorMappedId], map: "idx_github_events_author")
+  @@map("github_events")
+}
+
+model DevMetricsDaily {
+  id                 String   @id @default(uuid()) @db.Uuid
+  repoId             String   @map("repo_id") @db.Uuid
+  date               DateTime @db.Date
+  commitsCount       Int      @default(0) @map("commits_count")
+  prsOpened          Int      @default(0) @map("prs_opened")
+  prsMerged          Int      @default(0) @map("prs_merged")
+  prsClosed          Int      @default(0) @map("prs_closed")
+  issuesOpened       Int      @default(0) @map("issues_opened")
+  issuesClosed       Int      @default(0) @map("issues_closed")
+  linesAdded         Int      @default(0) @map("lines_added")
+  linesRemoved       Int      @default(0) @map("lines_removed")
+  deploysSuccess     Int      @default(0) @map("deploys_success")
+  deploysFailed      Int      @default(0) @map("deploys_failed")
+  activeContributors Int      @default(0) @map("active_contributors")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  repo GithubRepo @relation(fields: [repoId], references: [id])
+
+  @@unique([repoId, date])
+  @@index([date(sort: Desc)], map: "idx_dev_metrics_date")
+  @@index([repoId], map: "idx_dev_metrics_repo")
+  @@map("dev_metrics_daily")
+}
