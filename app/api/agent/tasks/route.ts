@@ -2,21 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateAgent } from "@/lib/agent-auth";
-
-/**
- * GET /api/agent/tasks — Agent asks for work
- *
- * Query params:
- *   status    — filter by status (backlog, a_fazer, em_curso, etc.)
- *   project   — filter by project slug
- *   assignee  — filter by assignee name (partial match)
- *   origin    — filter by origin (discord, github, manual, etc.)
- *   limit     — max results (default 20)
- *
- * POST /api/agent/tasks — Agent creates a task
- *
- * Body: { title, projectSlug?, assignee?, status?, priority?, origin?, deadline?, aiExtracted? }
- */
+import { resolveProjectSlug, resolvePersonByName, toDateStr } from "@/lib/agent-helpers";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
@@ -58,7 +44,7 @@ export async function GET(request: NextRequest) {
       projectName: t.project?.name,
       assignee: t.assignee?.name,
       origin: t.origin,
-      deadline: t.deadline?.toISOString().split("T")[0],
+      deadline: toDateStr(t.deadline),
       devStatus: t.devStatus,
       aiExtracted: t.aiExtracted,
       createdAt: t.createdAt.toISOString(),
@@ -77,30 +63,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  // Resolve project
-  let projectId: string | null = null;
-  if (projectSlug) {
-    const project = await prisma.project.findUnique({
-      where: { slug: projectSlug },
-      select: { id: true },
-    });
-    projectId = project?.id ?? null;
-  }
-
-  // Resolve assignee
-  let assigneeId: string | null = null;
-  if (assignee) {
-    const person = await prisma.person.findFirst({
-      where: { name: { contains: assignee, mode: "insensitive" } },
-      select: { id: true },
-    });
-    assigneeId = person?.id ?? null;
-  }
+  // Resolve project and assignee in parallel
+  const [resolved, assigneeId] = await Promise.all([
+    projectSlug ? resolveProjectSlug(projectSlug) : null,
+    assignee ? resolvePersonByName(assignee) : null,
+  ]);
 
   const task = await prisma.task.create({
     data: {
       title,
-      projectId,
+      projectId: resolved?.projectId ?? null,
       assigneeId,
       status: status ?? "backlog",
       priority: priority ?? "media",
@@ -108,7 +80,7 @@ export async function POST(request: NextRequest) {
       deadline: deadline ? new Date(deadline) : undefined,
       aiExtracted: aiExtracted ?? true,
       aiConfidence: aiExtracted ? 0.8 : undefined,
-      validationStatus: aiExtracted ? "por_confirmar" : "confirmed",
+      validationStatus: aiExtracted ? "por_confirmar" : "confirmado",
     },
   });
 

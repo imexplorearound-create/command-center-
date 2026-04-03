@@ -3,14 +3,6 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateAgent } from "@/lib/agent-auth";
 
-/**
- * GET /api/agent/projects — Agent gets project list
- *
- * Query params:
- *   status — filter by status (default: ativo)
- *   slug   — get a specific project
- */
-
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
@@ -29,9 +21,7 @@ export async function GET(request: NextRequest) {
   const projects = await prisma.project.findMany({
     where,
     include: {
-      tasks: {
-        select: { id: true, status: true, priority: true },
-      },
+      _count: { select: { tasks: true } },
       phases: {
         where: { status: "em_curso" },
         take: 1,
@@ -48,30 +38,38 @@ export async function GET(request: NextRequest) {
     orderBy: { createdAt: "asc" },
   });
 
+  // Get task counts by status in a single query
+  const taskCounts = await prisma.task.groupBy({
+    by: ["projectId", "status"],
+    _count: true,
+    where: { projectId: { in: projects.map((p) => p.id) } },
+  });
+
+  const taskMap = new Map<string, Record<string, number>>();
+  for (const row of taskCounts) {
+    if (!row.projectId) continue;
+    const existing = taskMap.get(row.projectId) ?? {};
+    existing[row.status] = row._count;
+    taskMap.set(row.projectId, existing);
+  }
+
   return NextResponse.json({
     count: projects.length,
-    projects: projects.map((p) => {
-      const tasksByStatus: Record<string, number> = {};
-      for (const t of p.tasks) {
-        tasksByStatus[t.status] = (tasksByStatus[t.status] ?? 0) + 1;
-      }
-
-      return {
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        type: p.type,
-        status: p.status,
-        health: p.health,
-        progress: p.progress,
-        description: p.description,
-        activePhase: p.phases[0]?.name,
-        client: p.client?.companyName,
-        daysSinceContact: p.client?.daysSinceContact,
-        repo: p.githubRepos[0]?.repoFullName,
-        tasks: tasksByStatus,
-        totalTasks: p.tasks.length,
-      };
-    }),
+    projects: projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      type: p.type,
+      status: p.status,
+      health: p.health,
+      progress: p.progress,
+      description: p.description,
+      activePhase: p.phases[0]?.name,
+      client: p.client?.companyName,
+      daysSinceContact: p.client?.daysSinceContact,
+      repo: p.githubRepos[0]?.repoFullName,
+      tasks: taskMap.get(p.id) ?? {},
+      totalTasks: p._count.tasks,
+    })),
   });
 }

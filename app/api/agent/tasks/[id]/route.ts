@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { authenticateAgent } from "@/lib/agent-auth";
-
-/**
- * PATCH /api/agent/tasks/:id — Agent updates a task
- *
- * Body: { status?, priority?, devStatus?, title?, assignee?, completedAt? }
- */
+import { resolvePersonByName, toDateStr } from "@/lib/agent-helpers";
 
 export async function PATCH(
   request: NextRequest,
@@ -19,40 +15,31 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
-  const task = await prisma.task.findUnique({
-    where: { id },
-    select: { id: true },
-  });
-  if (!task) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
-  }
-
   const data: Record<string, unknown> = {};
-
   if (body.status) data.status = body.status;
   if (body.priority) data.priority = body.priority;
   if (body.devStatus) data.devStatus = body.devStatus;
   if (body.title) data.title = body.title;
-
-  if (body.status === "feito" && !body.completedAt) {
-    data.completedAt = new Date();
-  }
+  if (body.status === "feito") data.completedAt = new Date();
 
   if (body.assignee) {
-    const person = await prisma.person.findFirst({
-      where: { name: { contains: body.assignee, mode: "insensitive" } },
-      select: { id: true },
-    });
-    if (person) data.assigneeId = person.id;
+    const personId = await resolvePersonByName(body.assignee);
+    if (personId) data.assigneeId = personId;
   }
 
-  const updated = await prisma.task.update({
-    where: { id },
-    data,
-    select: { id: true, title: true, status: true },
-  });
-
-  return NextResponse.json(updated);
+  try {
+    const updated = await prisma.task.update({
+      where: { id },
+      data,
+      select: { id: true, title: true, status: true },
+    });
+    return NextResponse.json(updated);
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+    throw e;
+  }
 }
 
 export async function GET(
@@ -85,7 +72,7 @@ export async function GET(
     assignee: task.assignee?.name,
     origin: task.origin,
     devStatus: task.devStatus,
-    deadline: task.deadline?.toISOString().split("T")[0],
+    deadline: toDateStr(task.deadline),
     createdAt: task.createdAt.toISOString(),
   });
 }

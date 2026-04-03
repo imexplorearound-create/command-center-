@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateAgent } from "@/lib/agent-auth";
-
-/**
- * POST /api/agent/alerts — Agent creates an alert
- *
- * Body: { title, type?, severity?, description?, projectSlug? }
- */
+import { resolveProjectSlug } from "@/lib/agent-helpers";
 
 export async function POST(request: NextRequest) {
   const auth = authenticateAgent(request);
@@ -20,14 +15,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  let projectId: string | null = null;
-  if (projectSlug) {
-    const project = await prisma.project.findUnique({
-      where: { slug: projectSlug },
-      select: { id: true },
-    });
-    projectId = project?.id ?? null;
-  }
+  const resolved = projectSlug ? await resolveProjectSlug(projectSlug) : null;
 
   const alert = await prisma.alert.create({
     data: {
@@ -35,7 +23,7 @@ export async function POST(request: NextRequest) {
       type: type ?? `agent:${auth.agentId}`,
       severity: severity ?? "info",
       description: description ?? `Criado por agente ${auth.agentId}`,
-      relatedProjectId: projectId,
+      relatedProjectId: resolved?.projectId ?? null,
     },
   });
 

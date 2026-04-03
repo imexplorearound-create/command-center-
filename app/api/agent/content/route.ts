@@ -2,17 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateAgent } from "@/lib/agent-auth";
-
-/**
- * GET /api/agent/content — Agent gets content pipeline
- *
- * Query params:
- *   status — filter (proposta, aprovado, em_producao, pronto, publicado)
- *
- * POST /api/agent/content — Agent creates content item
- *
- * Body: { title, format?, status?, projectSlug?, sourceCallDate?, platform? }
- */
+import { resolveProjectSlug, toDateStr } from "@/lib/agent-helpers";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
@@ -38,7 +28,7 @@ export async function GET(request: NextRequest) {
       format: c.format,
       status: c.status,
       project: c.project?.slug,
-      sourceCallDate: c.sourceCallDate?.toISOString().split("T")[0],
+      sourceCallDate: toDateStr(c.sourceCallDate),
       platform: c.platform,
       approvedBy: c.approvedBy?.name,
       scriptPath: c.scriptPath,
@@ -60,21 +50,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  let projectId: string | null = null;
-  if (projectSlug) {
-    const project = await prisma.project.findUnique({
-      where: { slug: projectSlug },
-      select: { id: true },
-    });
-    projectId = project?.id ?? null;
-  }
+  const resolved = projectSlug ? await resolveProjectSlug(projectSlug) : null;
 
   const item = await prisma.contentItem.create({
     data: {
       title,
       format,
       status: status ?? "proposta",
-      projectId,
+      projectId: resolved?.projectId ?? null,
       sourceCallDate: sourceCallDate ? new Date(sourceCallDate) : undefined,
       platform,
       scriptPath,

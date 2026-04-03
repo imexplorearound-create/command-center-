@@ -2,14 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateAgent } from "@/lib/agent-auth";
-
-/**
- * POST /api/agent/interactions — Agent creates an interaction
- *
- * Body: { title, type, body?, projectSlug?, participants?, date? }
- *
- * Types: call, email, decisao, documento, tarefa, nota
- */
+import { resolveProjectSlug, resolvePersonsByNames } from "@/lib/agent-helpers";
 
 export async function POST(request: NextRequest) {
   const auth = authenticateAgent(request);
@@ -25,34 +18,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let projectId: string | null = null;
-  let clientId: string | null = null;
-
-  if (projectSlug) {
-    const project = await prisma.project.findUnique({
-      where: { slug: projectSlug },
-      select: { id: true, client: { select: { id: true } } },
-    });
-    projectId = project?.id ?? null;
-    clientId = project?.client?.id ?? null;
-  }
-
-  // Resolve participants by name/email
-  const participantIds: string[] = [];
-  if (participants && Array.isArray(participants)) {
-    for (const p of participants) {
-      const person = await prisma.person.findFirst({
-        where: {
-          OR: [
-            { name: { contains: p, mode: "insensitive" } },
-            { email: { contains: p, mode: "insensitive" } },
-          ],
-        },
-        select: { id: true },
-      });
-      if (person) participantIds.push(person.id);
-    }
-  }
+  // Resolve project and participants in parallel
+  const [resolved, participantIds] = await Promise.all([
+    projectSlug ? resolveProjectSlug(projectSlug) : null,
+    participants && Array.isArray(participants)
+      ? resolvePersonsByNames(participants)
+      : [],
+  ]);
 
   const interaction = await prisma.interaction.create({
     data: {
@@ -60,17 +32,17 @@ export async function POST(request: NextRequest) {
       title,
       body: interactionBody,
       source: `agent:${auth.agentId}`,
-      projectId,
-      clientId,
+      projectId: resolved?.projectId ?? null,
+      clientId: resolved?.clientId ?? null,
       participants: participantIds,
       interactionDate: date ? new Date(date) : new Date(),
     },
   });
 
   // Update client lastInteractionAt
-  if (clientId) {
+  if (resolved?.clientId) {
     await prisma.client.update({
-      where: { id: clientId },
+      where: { id: resolved.clientId },
       data: { lastInteractionAt: new Date(), daysSinceContact: 0 },
     });
   }
