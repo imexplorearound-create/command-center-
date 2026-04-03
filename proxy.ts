@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getSecretKey } from "@/lib/auth/secret";
 
-const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/api/webhooks", "/api/sync"];
+const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/api/webhooks", "/api/sync", "/api/agent"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -45,6 +45,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|api/webhooks|api/sync).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|api/webhooks|api/sync|api/agent).*)",
   ],
 };
