@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { authenticateAgent } from "@/lib/agent-auth";
-import { updateKrProgress } from "@/lib/okr-actions";
 
 export async function PATCH(
   request: NextRequest,

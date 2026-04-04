@@ -3,7 +3,7 @@
 import type { RoadmapItem } from "@/lib/types";
 
 const YEAR_START = new Date("2026-01-01").getTime();
-const YEAR_END = new Date("2026-12-31").getTime();
+const YEAR_END = new Date("2027-01-01").getTime();
 const YEAR_SPAN = YEAR_END - YEAR_START;
 const MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
@@ -30,7 +30,7 @@ export function RoadmapView({ items }: { items: RoadmapItem[] }) {
   const currentMonth = new Date().getMonth();
 
   return (
-    <div className="cc-card" style={{ padding: "20px 24px", overflowX: "auto" }}>
+    <div className="cc-card" style={{ padding: "20px 24px", overflowX: "auto", position: "relative" }}>
       {/* Month header */}
       <div style={{ display: "flex", position: "relative", marginBottom: 16, paddingLeft: 140 }}>
         {MONTHS.map((m, i) => (

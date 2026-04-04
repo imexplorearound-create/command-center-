@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useState, useEffect, useActionState } from "react";
 import { healthColor, priorityColor, progressPercent, taskStatusColor } from "@/lib/utils";
 import { createObjective, createKeyResult, deleteObjective, deleteKeyResult } from "@/lib/okr-actions";
 import type { OkrObjectiveData, KeyResultData, TaskStatus } from "@/lib/types";
@@ -201,10 +201,9 @@ function TaskStatusDot({ status }: { status: TaskStatus }) {
 function ObjectiveForm({ projects, onClose }: { projects: Props["projects"]; onClose: () => void }) {
   const [state, action, pending] = useActionState(createObjective, undefined);
 
-  if (state?.success) {
-    onClose();
-    return null;
-  }
+  useEffect(() => {
+    if (state?.success) onClose();
+  }, [state?.success, onClose]);
 
   return (
     <div className="cc-card" style={{ padding: 16 }}>
@@ -234,10 +233,9 @@ function ObjectiveForm({ projects, onClose }: { projects: Props["projects"]; onC
 function KrForm({ objectiveId, onClose }: { objectiveId: string; onClose: () => void }) {
   const [state, action, pending] = useActionState(createKeyResult, undefined);
 
-  if (state?.success) {
-    onClose();
-    return null;
-  }
+  useEffect(() => {
+    if (state?.success) onClose();
+  }, [state?.success, onClose]);
 
   return (
     <form action={action} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 8, borderRadius: 6, background: "rgba(255,255,255,0.02)" }}>
