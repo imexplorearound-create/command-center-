@@ -27,6 +27,7 @@ export function RoadmapView({ items }: { items: RoadmapItem[] }) {
   }
 
   const today = todayPct();
+  const currentMonth = new Date().getMonth();
 
   return (
     <div className="cc-card" style={{ padding: "20px 24px", overflowX: "auto" }}>
@@ -41,8 +42,8 @@ export function RoadmapView({ items }: { items: RoadmapItem[] }) {
               fontSize: "0.72rem",
               borderLeft: "1px solid rgba(255,255,255,0.05)",
               padding: "4px 0",
-              fontWeight: new Date().getMonth() === i ? 700 : 400,
-              color: new Date().getMonth() === i ? "var(--text)" : "var(--muted)",
+              fontWeight: currentMonth === i ? 700 : 400,
+              color: currentMonth === i ? "var(--text)" : "var(--muted)",
             }}
           >
             {m}

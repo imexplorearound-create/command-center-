@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OkrObjectiveData, KeyResultData } from "@/lib/types";
-import { progressPercent, progressColor, healthBadge, taskStatusColor, formatDateShort, truncate } from "@/lib/utils";
+import { progressColor, healthBadge, taskStatusColor, formatDateShort, truncate, progressPercent } from "@/lib/utils";
 
 const CARD_W = 260;
 const CARD_H_OBJ = 130;
@@ -236,7 +236,7 @@ function ObjCard({ x, y, obj, isMain, onClick }: { x: number; y: number; obj: Ok
 
 function KrCard({ x, y, kr, expanded, onClick }: { x: number; y: number; kr: KeyResultData; expanded: boolean; onClick: () => void }) {
   const w = CARD_W * 0.75;
-  const pct = kr.targetValue > 0 ? Math.round((kr.currentValue / kr.targetValue) * 100) : 0;
+  const pct = progressPercent(kr.currentValue, kr.targetValue);
   const color = progressColor(pct);
   const barW = w - 20;
 

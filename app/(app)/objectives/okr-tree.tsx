@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useActionState } from "react";
-import { healthColor, priorityColor } from "@/lib/utils";
+import { healthColor, priorityColor, progressPercent, taskStatusColor } from "@/lib/utils";
 import { createObjective, createKeyResult, deleteObjective, deleteKeyResult } from "@/lib/okr-actions";
 import type { OkrObjectiveData, KeyResultData, TaskStatus } from "@/lib/types";
 
@@ -128,7 +128,7 @@ function ObjectiveCard({ objective: obj, projects }: { objective: OkrObjectiveDa
 
 function KeyResultCard({ kr, objectiveId }: { kr: KeyResultData; objectiveId: string }) {
   const [showTasks, setShowTasks] = useState(false);
-  const pct = kr.targetValue > 0 ? Math.round((kr.currentValue / kr.targetValue) * 100) : 0;
+  const pct = progressPercent(kr.currentValue, kr.targetValue);
   const hColor = healthColor(kr.health ?? "green");
 
   return (
@@ -192,16 +192,8 @@ function KeyResultCard({ kr, objectiveId }: { kr: KeyResultData; objectiveId: st
   );
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  backlog: "#666",
-  a_fazer: "#f97316",
-  em_curso: "#3b82f6",
-  em_revisao: "#eab308",
-  feito: "#22c55e",
-};
-
 function TaskStatusDot({ status }: { status: TaskStatus }) {
-  return <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: STATUS_COLORS[status] ?? "#666", flexShrink: 0 }} />;
+  return <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: taskStatusColor(status), flexShrink: 0 }} />;
 }
 
 // ─── Forms ─────────────────────────────────────────────────

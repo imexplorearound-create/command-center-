@@ -6,15 +6,15 @@ import { revalidatePath } from "next/cache";
 
 // ─── Progress Recalculation ────────────────────────────────
 
-async function recalculateObjectiveProgress(objectiveId: string) {
+async function recalculateObjectiveProgress(objectiveId: string): Promise<number | null> {
   const objective = await prisma.objective.findUnique({
     where: { id: objectiveId },
     include: { keyResults: { where: { status: "ativo" } } },
   });
-  if (!objective) return;
+  if (!objective) return null;
 
   const krs = objective.keyResults;
-  if (krs.length === 0) return;
+  if (krs.length === 0) return null;
 
   let weightedSum = 0;
   let totalWeight = 0;
@@ -27,12 +27,14 @@ async function recalculateObjectiveProgress(objectiveId: string) {
 
   const pct = totalWeight > 0 ? weightedSum / totalWeight : 0;
   const target = Number(objective.targetValue ?? 0);
-  const newCurrent = target > 0 ? (pct / 100) * target : 0;
+  const rounded = Math.round((target > 0 ? (pct / 100) * target : 0) * 100) / 100;
 
   await prisma.objective.update({
     where: { id: objectiveId },
-    data: { currentValue: Math.round(newCurrent * 100) / 100 },
+    data: { currentValue: rounded },
   });
+
+  return rounded;
 }
 
 async function recordSnapshot(entityType: string, entityId: string, value: number) {
@@ -53,14 +55,14 @@ export async function createObjective(
   const user = await getAuthUser();
   if (!user || user.role !== "admin") return { error: "Sem permissão" };
 
-  const title = formData.get("title") as string;
+  const title = (formData.get("title") as string ?? "").trim();
   if (!title) return { error: "Título obrigatório" };
 
   const targetValue = parseFloat(formData.get("targetValue") as string) || 0;
-  const unit = formData.get("unit") as string;
-  const deadline = formData.get("deadline") as string;
-  const projectId = formData.get("projectId") as string;
-  const description = formData.get("description") as string;
+  const unit = (formData.get("unit") as string ?? "").trim();
+  const deadline = (formData.get("deadline") as string ?? "").trim();
+  const projectId = (formData.get("projectId") as string ?? "").trim();
+  const description = (formData.get("description") as string ?? "").trim();
 
   await prisma.objective.create({
     data: {
@@ -122,8 +124,8 @@ export async function createKeyResult(
   const user = await getAuthUser();
   if (!user || user.role !== "admin") return { error: "Sem permissão" };
 
-  const objectiveId = formData.get("objectiveId") as string;
-  const title = formData.get("title") as string;
+  const objectiveId = (formData.get("objectiveId") as string ?? "").trim();
+  const title = (formData.get("title") as string ?? "").trim();
   if (!objectiveId || !title) return { error: "Objectivo e título obrigatórios" };
 
   const maxOrder = await prisma.keyResult.aggregate({
@@ -171,13 +173,8 @@ export async function updateKeyResult(
   });
 
   await recordSnapshot("key_result", kr.id, Number(kr.currentValue));
-  await recalculateObjectiveProgress(kr.objectiveId);
-
-  const obj = await prisma.objective.findUnique({
-    where: { id: kr.objectiveId },
-    select: { currentValue: true },
-  });
-  if (obj) await recordSnapshot("objective", kr.objectiveId, Number(obj.currentValue));
+  const objValue = await recalculateObjectiveProgress(kr.objectiveId);
+  if (objValue !== null) await recordSnapshot("objective", kr.objectiveId, objValue);
 
   revalidatePath("/objectives");
   return { success: true };
@@ -212,7 +209,7 @@ export async function linkTaskToKeyResult(taskId: string, keyResultId: string | 
   return { success: true };
 }
 
-// ─── Agent-callable: update KR progress ────────────────────
+// ─── Agent-callable: update KR progress (called from API route, not directly from client) ───
 
 export async function updateKrProgress(krId: string, currentValue: number) {
   const kr = await prisma.keyResult.update({
@@ -222,11 +219,6 @@ export async function updateKrProgress(krId: string, currentValue: number) {
   });
 
   await recordSnapshot("key_result", kr.id, Number(kr.currentValue));
-  await recalculateObjectiveProgress(kr.objectiveId);
-
-  const obj = await prisma.objective.findUnique({
-    where: { id: kr.objectiveId },
-    select: { currentValue: true },
-  });
-  if (obj) await recordSnapshot("objective", kr.objectiveId, Number(obj.currentValue));
+  const objValue = await recalculateObjectiveProgress(kr.objectiveId);
+  if (objValue !== null) await recordSnapshot("objective", kr.objectiveId, objValue);
 }
