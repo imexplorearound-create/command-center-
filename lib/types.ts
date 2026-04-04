@@ -248,6 +248,7 @@ export interface KeyResultData {
 
 export interface OkrObjectiveData extends ObjectiveData {
   description?: string;
+  projectSlug?: string;
   keyResults: KeyResultData[];
   computedProgress: number;
 }

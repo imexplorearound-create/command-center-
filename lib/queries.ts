@@ -351,7 +351,7 @@ export async function getOkrObjectives(user?: AuthUser | null): Promise<OkrObjec
   const objectives = await prisma.objective.findMany({
     where: hasFilter ? { OR: [{ projectId: null }, { project: pFilter }] } : undefined,
     include: {
-      project: { select: { name: true, color: true } },
+      project: { select: { name: true, slug: true, color: true } },
       keyResults: {
         where: { status: "ativo" },
         orderBy: { krOrder: "asc" },
@@ -421,6 +421,7 @@ export async function getOkrObjectives(user?: AuthUser | null): Promise<OkrObjec
       unit: o.unit ?? "",
       deadline: toDateStr(o.deadline),
       project: o.project?.name,
+      projectSlug: o.project?.slug,
       projectColor: o.project?.color ?? undefined,
       health: computeHealth(computedProgress, o.deadline),
       keyResults,
