@@ -97,6 +97,7 @@ model ProjectPhase {
 model Objective {
   id           String    @id @default(uuid()) @db.Uuid
   title        String    @db.VarChar(300)
+  description  String?   @db.Text
   targetValue  Decimal?  @map("target_value")
   currentValue Decimal   @default(0) @map("current_value")
   unit         String?   @db.VarChar(50)
@@ -106,9 +107,31 @@ model Objective {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  project Project? @relation(fields: [projectId], references: [id])
+  project    Project?     @relation(fields: [projectId], references: [id])
+  keyResults KeyResult[]
 
   @@map("objectives")
+}
+
+model KeyResult {
+  id           String    @id @default(uuid()) @db.Uuid
+  objectiveId  String    @map("objective_id") @db.Uuid
+  title        String    @db.VarChar(300)
+  targetValue  Decimal?  @map("target_value")
+  currentValue Decimal   @default(0) @map("current_value")
+  unit         String?   @db.VarChar(50)
+  weight       Int       @default(1)
+  deadline     DateTime? @db.Date
+  status       String    @default("ativo") @db.VarChar(50)
+  krOrder      Int       @default(0) @map("kr_order")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  objective Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@index([objectiveId], map: "idx_key_results_objective")
+  @@map("key_results")
 }
 
 // ─── People ─────────────────────────────────────────────────
@@ -166,6 +189,9 @@ model Task {
   validatedAt      DateTime? @map("validated_at") @db.Timestamptz
   originalData     Json?     @map("original_data")
 
+  // OKR
+  keyResultId        String?   @map("key_result_id") @db.Uuid
+
   // GitHub
   githubBranch       String?   @map("github_branch") @db.VarChar(300)
   githubPrNumber     Int?      @map("github_pr_number")
@@ -179,6 +205,7 @@ model Task {
   phase     ProjectPhase? @relation(fields: [phaseId], references: [id])
   assignee  Person?       @relation(fields: [assigneeId], references: [id])
   validator Person?       @relation("TaskValidator", fields: [validatedById], references: [id])
+  keyResult KeyResult?    @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
   alerts    Alert[]       @relation("AlertTask")
 
   workflowInstanceTasks WorkflowInstanceTask[]
@@ -457,6 +484,21 @@ model WorkflowInstanceTask {
 
   @@index([instanceId], map: "idx_workflow_instance_tasks_instance")
   @@map("workflow_instance_tasks")
+}
+
+// ─── OKR Snapshots ──────────────────────────────────────────
+
+model OkrSnapshot {
+  id           String   @id @default(uuid()) @db.Uuid
+  entityType   String   @map("entity_type") @db.VarChar(20)
+  entityId     String   @map("entity_id") @db.Uuid
+  value        Decimal
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([entityType, entityId, snapshotDate])
+  @@index([entityId], map: "idx_okr_snapshots_entity")
+  @@map("okr_snapshots")
 }
 
 // ─── GitHub Integration ─────────────────────────────────────

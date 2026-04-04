@@ -87,6 +87,24 @@ async function main() {
   });
   console.log("  Objectives created");
 
+  // ─── Key Results ────────────────────────────────────────
+  const objectives = await prisma.objective.findMany({ orderBy: { createdAt: "asc" } });
+  const [objRevenue, objAura, objIpme] = objectives;
+
+  await prisma.keyResult.createMany({
+    data: [
+      { objectiveId: objRevenue.id, title: "Fechar 3 contratos de cliente", targetValue: 3, currentValue: 0, unit: "contratos", weight: 2, deadline: new Date("2026-09-30"), krOrder: 1 },
+      { objectiveId: objRevenue.id, title: "AURA PMS gerar 50k€ MRR", targetValue: 50000, currentValue: 0, unit: "€", weight: 3, deadline: new Date("2026-12-31"), krOrder: 2 },
+      { objectiveId: objRevenue.id, title: "Pipeline com 10 leads qualificados", targetValue: 10, currentValue: 2, unit: "leads", weight: 1, deadline: new Date("2026-06-30"), krOrder: 3 },
+      { objectiveId: objAura.id, title: "Lançar MVP público", targetValue: 1, currentValue: 0, unit: "lançamento", weight: 2, deadline: new Date("2026-05-31"), krOrder: 1 },
+      { objectiveId: objAura.id, title: "Onboarding 10 propriedades piloto", targetValue: 10, currentValue: 0, unit: "propriedades", weight: 2, deadline: new Date("2026-06-30"), krOrder: 2 },
+      { objectiveId: objAura.id, title: "NPS piloto >= 8", targetValue: 8, currentValue: 0, unit: "NPS", weight: 1, deadline: new Date("2026-07-31"), krOrder: 3 },
+      { objectiveId: objIpme.id, title: "Proposta aprovada pelo cliente", targetValue: 1, currentValue: 0, unit: "aprovação", weight: 3, deadline: new Date("2026-04-30"), krOrder: 1 },
+      { objectiveId: objIpme.id, title: "Contrato assinado", targetValue: 1, currentValue: 0, unit: "contrato", weight: 3, deadline: new Date("2026-05-31"), krOrder: 2 },
+    ],
+  });
+  console.log("  Key Results created");
+
   // ─── Client ─────────────────────────────────────────────
   const client = await prisma.client.create({
     data: { companyName: "Fiscomelres / iPME", projectId: ipme.id, status: "negociacao" },

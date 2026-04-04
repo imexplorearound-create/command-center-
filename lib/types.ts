@@ -231,6 +231,46 @@ export interface ContentItemData {
   publishedAt?: string;
 }
 
+// ─── OKR Types ─────────────────────────────────────────────
+
+export interface KeyResultData {
+  id: string;
+  title: string;
+  targetValue: number;
+  currentValue: number;
+  unit: string;
+  weight: number;
+  deadline: string;
+  status: string;
+  health?: Health;
+  linkedTasks: { id: string; title: string; status: TaskStatus; assignee: string }[];
+}
+
+export interface OkrObjectiveData extends ObjectiveData {
+  description?: string;
+  keyResults: KeyResultData[];
+  computedProgress: number;
+}
+
+export interface OkrSnapshotData {
+  date: string;
+  value: number;
+}
+
+export interface RoadmapItem {
+  id: string;
+  type: "phase" | "objective" | "key_result";
+  title: string;
+  project?: string;
+  projectColor?: string;
+  startDate: string;
+  endDate: string;
+  progress: number;
+  health?: Health;
+}
+
+// ─── Project Detail ────────────────────────────────────────
+
 export interface ProjectDetail extends ProjectData {
   phases: PhaseData[];
   tasks: TaskData[];

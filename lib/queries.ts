@@ -21,6 +21,10 @@ import type {
   GithubCommit,
   GithubDeploy,
   DevMetrics,
+  OkrObjectiveData,
+  KeyResultData,
+  RoadmapItem,
+  OkrSnapshotData,
 } from "./types";
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -336,6 +340,187 @@ export async function getWorkflowInstances(): Promise<WorkflowInstanceData[]> {
       })),
     };
   });
+}
+
+// ─── OKR ───────────────────────────────────────────────────
+
+export async function getOkrObjectives(user?: AuthUser | null): Promise<OkrObjectiveData[]> {
+  const pFilter = projectFilter(user);
+  const hasFilter = Object.keys(pFilter).length > 0;
+
+  const objectives = await prisma.objective.findMany({
+    where: hasFilter ? { OR: [{ projectId: null }, { project: pFilter }] } : undefined,
+    include: {
+      project: { select: { name: true, color: true } },
+      keyResults: {
+        where: { status: "ativo" },
+        orderBy: { krOrder: "asc" },
+        include: {
+          tasks: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              assignee: { select: { name: true } },
+            },
+            take: 10,
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return objectives.map((o) => {
+    const target = Number(o.targetValue ?? 0);
+    const current = Number(o.currentValue);
+
+    const keyResults: KeyResultData[] = o.keyResults.map((kr) => {
+      const krTarget = Number(kr.targetValue ?? 0);
+      const krCurrent = Number(kr.currentValue);
+      return {
+        id: kr.id,
+        title: kr.title,
+        targetValue: krTarget,
+        currentValue: krCurrent,
+        unit: kr.unit ?? "",
+        weight: kr.weight,
+        deadline: toDateStr(kr.deadline),
+        status: kr.status,
+        health: computeHealth(krTarget > 0 ? (krCurrent / krTarget) * 100 : 0, kr.deadline),
+        linkedTasks: kr.tasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status as TaskData["status"],
+          assignee: t.assignee?.name ?? "—",
+        })),
+      };
+    });
+
+    // Cascading progress: weighted average of KR progresses
+    let computedProgress = 0;
+    if (keyResults.length > 0) {
+      let weightedSum = 0;
+      let totalWeight = 0;
+      for (const kr of keyResults) {
+        const pct = kr.targetValue > 0 ? (kr.currentValue / kr.targetValue) * 100 : 0;
+        weightedSum += pct * kr.weight;
+        totalWeight += kr.weight;
+      }
+      computedProgress = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+    } else {
+      computedProgress = target > 0 ? Math.round((current / target) * 100) : 0;
+    }
+
+    return {
+      id: o.id,
+      title: o.title,
+      description: o.description ?? undefined,
+      targetValue: target,
+      currentValue: current,
+      unit: o.unit ?? "",
+      deadline: toDateStr(o.deadline),
+      project: o.project?.name,
+      projectColor: o.project?.color ?? undefined,
+      health: computeHealth(computedProgress, o.deadline),
+      keyResults,
+      computedProgress,
+    };
+  });
+}
+
+export async function getRoadmapItems(user?: AuthUser | null): Promise<RoadmapItem[]> {
+  const pFilter = projectFilter(user);
+  const hasFilter = Object.keys(pFilter).length > 0;
+
+  const [phases, objectives] = await Promise.all([
+    prisma.projectPhase.findMany({
+      where: hasFilter ? { project: pFilter } : undefined,
+      include: { project: { select: { name: true, color: true } } },
+      orderBy: [{ project: { name: "asc" } }, { phaseOrder: "asc" }],
+    }),
+    prisma.objective.findMany({
+      where: {
+        deadline: { not: null },
+        ...(hasFilter ? { OR: [{ projectId: null }, { project: pFilter }] } : {}),
+      },
+      include: {
+        project: { select: { name: true, color: true } },
+        keyResults: {
+          where: { deadline: { not: null } },
+          select: { id: true, title: true, deadline: true, currentValue: true, targetValue: true },
+        },
+      },
+    }),
+  ]);
+
+  const items: RoadmapItem[] = [];
+
+  // Project phases as bars
+  for (const ph of phases) {
+    if (!ph.startDate || !ph.endDate) continue;
+    items.push({
+      id: ph.id,
+      type: "phase",
+      title: ph.name,
+      project: ph.project.name,
+      projectColor: ph.project.color ?? "#888",
+      startDate: toDateStr(ph.startDate),
+      endDate: toDateStr(ph.endDate),
+      progress: ph.progress,
+      health: computeHealth(ph.progress, ph.endDate),
+    });
+  }
+
+  // Objectives as milestones (use createdAt → deadline as range)
+  for (const obj of objectives) {
+    if (!obj.deadline) continue;
+    items.push({
+      id: obj.id,
+      type: "objective",
+      title: obj.title,
+      project: obj.project?.name,
+      projectColor: obj.project?.color ?? "#f97316",
+      startDate: toDateStr(obj.createdAt),
+      endDate: toDateStr(obj.deadline),
+      progress: Number(obj.targetValue) > 0
+        ? Math.round((Number(obj.currentValue) / Number(obj.targetValue)) * 100)
+        : 0,
+    });
+
+    // Key Results as sub-milestones
+    for (const kr of obj.keyResults) {
+      if (!kr.deadline) continue;
+      items.push({
+        id: kr.id,
+        type: "key_result",
+        title: kr.title,
+        project: obj.project?.name,
+        projectColor: obj.project?.color ?? "#f97316",
+        startDate: toDateStr(obj.createdAt),
+        endDate: toDateStr(kr.deadline),
+        progress: Number(kr.targetValue) > 0
+          ? Math.round((Number(kr.currentValue) / Number(kr.targetValue)) * 100)
+          : 0,
+      });
+    }
+  }
+
+  return items;
+}
+
+export async function getOkrSnapshots(
+  entityType: string,
+  entityId: string
+): Promise<OkrSnapshotData[]> {
+  const snapshots = await prisma.okrSnapshot.findMany({
+    where: { entityType, entityId },
+    orderBy: { snapshotDate: "asc" },
+  });
+  return snapshots.map((s) => ({
+    date: toDateStr(s.snapshotDate),
+    value: Number(s.value),
+  }));
 }
 
 // ─── GitHub Data ───────────────────────────────────────────

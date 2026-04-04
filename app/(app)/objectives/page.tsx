@@ -1,19 +1,33 @@
-import { getObjectives } from "@/lib/queries";
+import { getOkrObjectives, getRoadmapItems } from "@/lib/queries";
 import { getAuthUser } from "@/lib/auth/dal";
-import { ObjectivesMap } from "./objectives-map";
+import { prisma } from "@/lib/db";
+import { OkrTabs } from "./okr-tabs";
 
 export default async function ObjectivesPage() {
   const user = await getAuthUser();
-  const objectives = await getObjectives(user);
+
+  const [objectives, roadmapItems, projects] = await Promise.all([
+    getOkrObjectives(user),
+    getRoadmapItems(user),
+    prisma.project.findMany({
+      where: { status: "ativo" },
+      select: { id: true, name: true, slug: true, color: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   return (
     <>
       <div className="cc-page-header">
-        <div className="cc-page-title">Mapa Estratégico</div>
-        <div className="cc-page-subtitle">Objectivos 2026 — como tudo se liga</div>
+        <div className="cc-page-title">Estratégia</div>
+        <div className="cc-page-subtitle">OKRs e Roadmap 2026</div>
       </div>
 
-      <ObjectivesMap objectives={objectives} />
+      <OkrTabs
+        objectives={objectives}
+        roadmapItems={roadmapItems}
+        projects={projects.map((p) => ({ id: p.id, name: p.name, slug: p.slug, color: p.color ?? "#888" }))}
+      />
     </>
   );
 }
