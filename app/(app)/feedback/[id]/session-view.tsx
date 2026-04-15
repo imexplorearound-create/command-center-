@@ -150,7 +150,11 @@ export function FeedbackSessionView({ session, items }: Props) {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {items.map((item) => (
+        {items.map((item) => {
+          const cls = item.classification
+            ? classificationByValue.get(item.classification as typeof CLASSIFICATION_VALUES[number])
+            : null;
+          return (
           <div key={item.id} className="cc-card" style={{ padding: "14px 18px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
               <div>
@@ -166,20 +170,17 @@ export function FeedbackSessionView({ session, items }: Props) {
                 )}
               </div>
               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                {item.classification && (() => {
-                  const cls = classificationByValue.get(item.classification as typeof CLASSIFICATION_VALUES[number]);
-                  return (
-                    <span style={{
-                      fontSize: "0.75rem",
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      background: cls?.color ?? "#888",
-                      color: "#fff",
-                    }}>
-                      {cls?.label ?? item.classification}
-                    </span>
-                  );
-                })()}
+                {item.classification && (
+                  <span style={{
+                    fontSize: "0.75rem",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background: cls?.color ?? "#888",
+                    color: "#fff",
+                  }}>
+                    {cls?.label ?? item.classification}
+                  </span>
+                )}
                 {item.status === "converted" && (
                   <span style={{ fontSize: "0.75rem", padding: "2px 8px", borderRadius: 4, background: "#4CAF50", color: "#fff" }}>
                     {t("feedback.item.converted")}
@@ -327,7 +328,8 @@ export function FeedbackSessionView({ session, items }: Props) {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

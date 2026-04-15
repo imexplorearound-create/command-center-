@@ -61,9 +61,12 @@ async function recordValidationInTx(
   const agentId = input.agentId ?? MAESTRO_INTERNAL;
   const delta = applyDelta(input.action);
   const tenantId = await getTenantId();
+  const whereKey = {
+    tenantId_agentId_extractionType: { tenantId, agentId, extractionType: input.extractionType },
+  };
 
   const existing = await tx.trustScore.findUnique({
-    where: { tenantId_agentId_extractionType: { tenantId, agentId, extractionType: input.extractionType } },
+    where: whereKey,
     select: { score: true },
   });
 
@@ -71,7 +74,7 @@ async function recordValidationInTx(
   const scoreAfter = clampScore(scoreBefore, delta);
 
   await tx.trustScore.upsert({
-    where: { tenantId_agentId_extractionType: { tenantId, agentId, extractionType: input.extractionType } },
+    where: whereKey,
     create: {
       tenantId,
       agentId,
