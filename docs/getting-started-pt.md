@@ -39,10 +39,10 @@
 
 ### Criar tarefas
 
-Na página do projecto, vais ver o **Kanban** com 3 colunas: `Backlog` / `Doing` / `Done`.
+Na página do projecto, vais ver o **Kanban** com 5 colunas: `Backlog` / `A fazer` / `Em curso` / `Em revisão` / `Feito`.
 
 1. Clica em **+ Tarefa** (topo da coluna Backlog).
-2. Preenche: título, prioridade (baixa/média/alta), assignee (opcional), deadline (opcional).
+2. Preenche: título, prioridade (baixa/média/alta/crítica), assignee (opcional), deadline (opcional).
 3. Repete 3 vezes com tarefas diferentes (ex: "Research concorrência", "Wireframes homepage", "Setup CMS").
 
 ---
@@ -51,7 +51,7 @@ Na página do projecto, vais ver o **Kanban** com 3 colunas: `Backlog` / `Doing`
 
 - **Arrastar e largar** (drag-drop) entre colunas para mudar estado.
 - **Clicar numa tarefa** abre modal com detalhes, descrição, comentários, histórico.
-- **Prioridade** mostra-se com ícone colorido (🔴 alta, 🟡 média, ⚪ baixa).
+- **Prioridade** mostra-se com ícone colorido (🔴 crítica, 🟠 alta, 🟡 média, ⚪ baixa).
 - **Filtros** no topo: por pessoa, prioridade, origem (AI/manual/GitHub).
 
 ### Atalhos via Maestro (se módulo activo)
@@ -62,6 +62,10 @@ Se tens o módulo **Maestro** (experimental) activo, podes usar linguagem natura
 - `marca "wireframes" como concluída`
 - `atribui "setup CMS" ao Bruno`
 - `muda a prioridade de "research" para alta`
+- `comenta em "deploy staging": falta adicionar env vars`
+- `regista 2h no projecto site-institucional-2026 ontem para revisão`
+
+O **trust score** é treinado silenciosamente sempre que confirmas uma tarefa extraída pela AI — ao longo do tempo, o Maestro passa a precisar de menos validação explícita.
 
 ---
 
@@ -69,15 +73,44 @@ Se tens o módulo **Maestro** (experimental) activo, podes usar linguagem natura
 
 > Requer módulo **Timetracking** activo (off por defeito — activa em `/settings`).
 
-1. No kanban, carrega em **⏱** ao lado de uma tarefa.
-2. Preenche: horas (ex. `1.5`), data, descrição opcional.
-3. Ou usa o Maestro: `regista 2h no projecto site-institucional-2026 ontem para revisão`.
+1. Em `/timetracking` vês a semana actual (Seg→Dom) com total de horas vs contratadas.
+2. Clica numa célula para registar — preenche: horas (ex. `1.5`), projecto, tarefa (opcional), descrição opcional.
+3. Ou usa o Maestro (ver passo 3).
+4. **Submeter semana:** carrega em "Submeter X drafts" ao fim da semana → entrega para aprovação.
+5. **Aprovações (gestor/admin):** entradas submetidas aparecem na secção "Aprovações pendentes" da mesma página.
 
 O resumo semanal aparece no dashboard (card "Horas da semana") se o módulo estiver activo.
 
 ---
 
-## Passo 5 — Integração básica (10 min) — **opcional**
+## Passo 5 — Feedback via extensão Chrome (10 min) — **opcional**
+
+> Requer extensão Chrome instalada e configurada. Ver `docs/feedback-tester-setup.md` para setup completo.
+
+### Enquanto estás a testar um projecto
+
+1. Com a extensão instalada + workspace configurado (URL + slug), clica no botão 🎤 flutuante no site a testar.
+2. Grava uma nota de voz (descreve o bug/sugestão).
+3. A nota é transcrita automaticamente e aparece em `/feedback` com timeline dos eventos DOM capturados.
+
+### Gerir sessões em `/feedback`
+
+- **Agrupamento por projecto:** a lista está dividida em accordions (`<details>`) por projecto — expandir/colapsar para focar.
+- **Menu `⋯` em cada sessão:**
+  - **Arquivar** — soft-delete reversível. Arquivadas deixam de aparecer na lista principal.
+  - **Apagar permanentemente** — remove sessão, itens e os ficheiros `.webm` do disco. Irreversível (confirm dialog).
+- **Ver arquivados:** link "Ver arquivados" no topo da página alterna para mostrar só as arquivadas (`?archived=1`).
+- **Converter para tarefa:** dentro de uma sessão, cada nota tem botão "📋 Criar tarefa" que cria uma tarefa no kanban do projecto com o texto da transcrição.
+
+### Partilhar com um tester externo
+
+1. Abre `/project/<slug>/tester-setup`.
+2. Vês 3 passos: copiar Server URL + slug, criar tester (comando `pnpm tsx scripts/create-tester.ts`), e instruções para o tester.
+3. Envia os dados ao tester; os feedbacks dele aparecem em `/feedback` do lado do admin.
+
+---
+
+## Passo 6 — Integração básica (10 min) — **opcional**
 
 ### Opção A: GitHub (sync de commits, issues, PRs)
 
@@ -103,6 +136,12 @@ O resumo semanal aparece no dashboard (card "Horas da semana") se o módulo esti
    ```
 4. No Command Center: `/settings/notifications` → "Ligar Gmail" → consent flow → volta ligado.
 
+### Opção C: Telegram / WhatsApp bots
+
+1. `/settings/notifications` → "Ligar Telegram" → gera código → mete em `/start <código>` no bot.
+2. WhatsApp similar, mas requer Twilio/Meta Business API configurados via env vars.
+3. Recebes notificações de aprovações, briefings diários, alertas de deadline.
+
 ---
 
 ## Troubleshooting
@@ -118,6 +157,7 @@ O resumo semanal aparece no dashboard (card "Horas da semana") se o módulo esti
 ### "Tarefas AI-extraídas não aparecem"
 - Ver trust score em `/maestro`. Se score baixo, tarefas ficam em `por_confirmar` até validares.
 - `/dashboard` → **Validação** → confirmar/editar/rejeitar.
+- Cada confirmação sobe o score; após várias validações, a mesma categoria passa a entrar directo no kanban como `auto_confirmado`.
 
 ### "Feedback por voz não regista"
 - Verifica `GROQ_API_KEY` no `.env.local`.
@@ -125,10 +165,18 @@ O resumo semanal aparece no dashboard (card "Horas da semana") se o módulo esti
 - Adiciona o workspace (URL + slug do projecto).
 - Reinstala a extensão se acabaste de fazer upgrade (v1.3.0+).
 
+### "Página /feedback vazia mas tenho sessões"
+- Verifica se estás a ver só as não-arquivadas. Clica **Ver arquivados** no topo.
+- Se acabaste de aplicar uma migration nova, reinicia o dev server — o Prisma client em memória pode estar stale.
+
 ### "APP_SECRET error no arranque"
 - Gera uma chave nova: `openssl rand -hex 32`.
 - Em `.env.local`: `APP_SECRET=<chave>` (mínimo 32 chars).
 - Reinicia o servidor.
+
+### "Erro `Unknown argument archivedAt` ou similar após mudança de schema"
+- Corre `pnpm prisma generate` para regerar tipos.
+- Reinicia o dev server — o cliente Prisma carregado em memória não se actualiza sozinho.
 
 ---
 
@@ -136,7 +184,10 @@ O resumo semanal aparece no dashboard (card "Horas da semana") se o módulo esti
 
 - **OKRs:** `/objectives` — define 3-5 objectivos trimestrais com Key Results mensuráveis.
 - **CRM:** `/crm` — pipeline comercial por fases. Requer módulo CRM (tier 2, on por defeito).
+- **Investimentos:** `/cross-projects` — mapas de execução orçamental transversais.
 - **Integrações:** `/settings` para configurar Discord, Telegram, WhatsApp, LLM provider.
 - **Feedback de clientes:** `/project/<slug>/tester-setup` gera instruções para partilhar a extensão com testers.
+- **Maestro:** `/maestro` — trust score por categoria, histórico de acções recentes.
+- **Idioma:** a UI suporta PT-PT e EN. Muda em `/settings` (por tenant).
 
 📚 Para docs aprofundados: `docs/guia-operacional-completo.md`.
