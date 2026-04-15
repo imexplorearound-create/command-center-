@@ -1,16 +1,23 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import crypto from "crypto";
-
-/**
- * Agent API authentication.
- * Agents authenticate via Bearer token in the Authorization header.
- * The token is shared for now (AGENT_API_SECRET env var).
- * Future: per-agent API keys stored in the DB.
- */
+import { resolveHeaderTenant } from "@/lib/tenant";
+import type { TenantPrisma } from "@/lib/db";
 
 export interface AgentContext {
   agentId: string;
+}
+
+/**
+ * Resolve the tenant for an agent/sync request.
+ * Uses X-Tenant-Id header, falling back to the default tenant.
+ */
+export async function resolveAgentTenant(request: NextRequest): Promise<TenantPrisma | NextResponse> {
+  try {
+    return await resolveHeaderTenant(request.headers.get("x-tenant-id"));
+  } catch {
+    return NextResponse.json({ error: "Tenant not found" }, { status: 400 });
+  }
 }
 
 export function authenticateAgent(

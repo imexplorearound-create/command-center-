@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { priorityColor, formatDateShort } from "@/lib/utils";
-import type { InteractionType, ClientData } from "@/lib/types";
+import type { InteractionType, InteractionData, ClientData, PersonOption } from "@/lib/types";
+import { InteractionModal } from "./interaction-modal";
 
 const TYPE_CONFIG: Record<InteractionType, { icon: string; label: string; iconClass: string }> = {
   call: { icon: "📞", label: "Call", iconClass: "cc-feed-icon-call" },
@@ -25,13 +26,20 @@ const FILTER_OPTIONS: { key: InteractionType | "tudo"; label: string }[] = [
 
 interface Props {
   slug: string;
+  projectId: string;
   projectName: string;
   client: ClientData;
+  people: PersonOption[];
 }
 
-export function ClientView({ slug, projectName, client }: Props) {
+export function ClientView({ slug, projectId, projectName, client, people }: Props) {
   const [typeFilter, setTypeFilter] = useState<InteractionType | "tudo">("tudo");
   const [personFilter, setPersonFilter] = useState<string | null>(null);
+  const [modal, setModal] = useState<
+    | { mode: "create" }
+    | { mode: "edit"; interaction: InteractionData }
+    | null
+  >(null);
 
   const filteredInteractions = client.interactions.filter(i => {
     if (typeFilter !== "tudo" && i.type !== typeFilter) return false;
@@ -107,7 +115,24 @@ export function ClientView({ slug, projectName, client }: Props) {
       </div>
 
       <div className="cc-card" style={{ padding: 20 }}>
-        <div className="cc-section-title">Feed de interacções</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div className="cc-section-title" style={{ marginBottom: 0 }}>Feed de interacções</div>
+          <button
+            onClick={() => setModal({ mode: "create" })}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 6,
+              border: "none",
+              background: "var(--accent)",
+              color: "#fff",
+              fontSize: "0.82rem",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            + Nova interação
+          </button>
+        </div>
 
         <div className="cc-feed-filters">
           {FILTER_OPTIONS.map(f => (
@@ -135,7 +160,12 @@ export function ClientView({ slug, projectName, client }: Props) {
         {filteredInteractions.map(item => {
           const cfg = TYPE_CONFIG[item.type];
           return (
-            <div key={item.id} className="cc-feed-item">
+            <div
+              key={item.id}
+              className="cc-feed-item"
+              style={{ cursor: "pointer" }}
+              onClick={() => setModal({ mode: "edit", interaction: item })}
+            >
               <div className="cc-feed-date">{formatDateShort(item.date)}</div>
               <div className={`cc-feed-icon ${cfg.iconClass}`}>{cfg.icon}</div>
               <div className="cc-feed-content">
@@ -147,7 +177,10 @@ export function ClientView({ slug, projectName, client }: Props) {
                       key={p}
                       className="cc-feed-participant"
                       style={{ cursor: "pointer" }}
-                      onClick={() => setPersonFilter(personFilter === p ? null : p)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPersonFilter(personFilter === p ? null : p);
+                      }}
                     >
                       {p}
                     </span>
@@ -159,6 +192,26 @@ export function ClientView({ slug, projectName, client }: Props) {
           );
         })}
       </div>
+
+      {modal?.mode === "create" && (
+        <InteractionModal
+          mode="create"
+          clientId={client.id}
+          projectId={projectId}
+          people={people}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.mode === "edit" && (
+        <InteractionModal
+          mode="edit"
+          interaction={modal.interaction}
+          clientId={client.id}
+          projectId={projectId}
+          people={people}
+          onClose={() => setModal(null)}
+        />
+      )}
     </>
   );
 }

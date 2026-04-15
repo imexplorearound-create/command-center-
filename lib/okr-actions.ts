@@ -1,13 +1,14 @@
 "use server";
 
-import { prisma } from "@/lib/db";
+import { getTenantDb } from "@/lib/tenant";
 import { getAuthUser } from "@/lib/auth/dal";
 import { revalidatePath } from "next/cache";
 
 // ─── Progress Recalculation ────────────────────────────────
 
 async function recalculateObjectiveProgress(objectiveId: string): Promise<number | null> {
-  const objective = await prisma.objective.findUnique({
+  const db = await getTenantDb();
+  const objective = await db.objective.findUnique({
     where: { id: objectiveId },
     include: { keyResults: { where: { status: "ativo" } } },
   });
@@ -29,7 +30,7 @@ async function recalculateObjectiveProgress(objectiveId: string): Promise<number
   const target = Number(objective.targetValue ?? 0);
   const rounded = Math.round((target > 0 ? (pct / 100) * target : 0) * 100) / 100;
 
-  await prisma.objective.update({
+  await db.objective.update({
     where: { id: objectiveId },
     data: { currentValue: rounded },
   });
@@ -38,10 +39,11 @@ async function recalculateObjectiveProgress(objectiveId: string): Promise<number
 }
 
 async function recordSnapshot(entityType: string, entityId: string, value: number) {
+  const db = await getTenantDb();
   const today = new Date(new Date().toISOString().split("T")[0]);
-  await prisma.okrSnapshot.upsert({
+  await db.okrSnapshot.upsert({
     where: { entityType_entityId_snapshotDate: { entityType, entityId, snapshotDate: today } },
-    create: { entityType, entityId, value, snapshotDate: today },
+    create: { tenantId: "", entityType, entityId, value, snapshotDate: today },
     update: { value },
   });
 }
@@ -64,8 +66,10 @@ export async function createObjective(
   const projectId = (formData.get("projectId") as string ?? "").trim();
   const description = (formData.get("description") as string ?? "").trim();
 
-  await prisma.objective.create({
+  const db = await getTenantDb();
+  await db.objective.create({
     data: {
+      tenantId: "",
       title,
       description: description || null,
       targetValue: targetValue || null,
@@ -90,7 +94,8 @@ export async function updateObjective(
   const title = formData.get("title") as string;
   if (!id || !title) return { error: "ID e título obrigatórios" };
 
-  await prisma.objective.update({
+  const db = await getTenantDb();
+  await db.objective.update({
     where: { id },
     data: {
       title,
@@ -110,7 +115,8 @@ export async function deleteObjective(id: string) {
   const user = await getAuthUser();
   if (!user || user.role !== "admin") return { error: "Sem permissão" };
 
-  await prisma.objective.delete({ where: { id } });
+  const db = await getTenantDb();
+  await db.objective.delete({ where: { id } });
   revalidatePath("/objectives");
   return { success: true };
 }
@@ -128,13 +134,15 @@ export async function createKeyResult(
   const title = (formData.get("title") as string ?? "").trim();
   if (!objectiveId || !title) return { error: "Objectivo e título obrigatórios" };
 
-  const maxOrder = await prisma.keyResult.aggregate({
+  const db = await getTenantDb();
+  const maxOrder = await db.keyResult.aggregate({
     where: { objectiveId },
     _max: { krOrder: true },
   });
 
-  await prisma.keyResult.create({
+  await db.keyResult.create({
     data: {
+      tenantId: "",
       objectiveId,
       title,
       targetValue: parseFloat(formData.get("targetValue") as string) || null,
@@ -159,7 +167,8 @@ export async function updateKeyResult(
   const id = formData.get("id") as string;
   if (!id) return { error: "ID obrigatório" };
 
-  const kr = await prisma.keyResult.update({
+  const db = await getTenantDb();
+  const kr = await db.keyResult.update({
     where: { id },
     data: {
       title: (formData.get("title") as string) || undefined,
@@ -184,7 +193,8 @@ export async function deleteKeyResult(id: string) {
   const user = await getAuthUser();
   if (!user || user.role !== "admin") return { error: "Sem permissão" };
 
-  const kr = await prisma.keyResult.delete({
+  const db = await getTenantDb();
+  const kr = await db.keyResult.delete({
     where: { id },
     select: { objectiveId: true },
   });
@@ -200,7 +210,8 @@ export async function linkTaskToKeyResult(taskId: string, keyResultId: string | 
   const user = await getAuthUser();
   if (!user || user.role !== "admin") return { error: "Sem permissão" };
 
-  await prisma.task.update({
+  const db = await getTenantDb();
+  await db.task.update({
     where: { id: taskId },
     data: { keyResultId },
   });
@@ -212,7 +223,8 @@ export async function linkTaskToKeyResult(taskId: string, keyResultId: string | 
 // ─── Agent-callable: update KR progress (called from API route, not directly from client) ───
 
 export async function updateKrProgress(krId: string, currentValue: number) {
-  const kr = await prisma.keyResult.update({
+  const db = await getTenantDb();
+  const kr = await db.keyResult.update({
     where: { id: krId },
     data: { currentValue },
     select: { id: true, objectiveId: true, currentValue: true },

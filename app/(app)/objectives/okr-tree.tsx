@@ -57,9 +57,30 @@ function ObjectiveCard({ objective: obj, projects }: { objective: OkrObjectiveDa
         <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
           {obj.projectColor && <div style={{ width: 4, height: 32, borderRadius: 2, backgroundColor: obj.projectColor, flexShrink: 0 }} />}
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>{obj.title}</div>
+            <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+              {obj.projectSlug ? (
+                <a
+                  href={`/project/${obj.projectSlug}`}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: "inherit", textDecoration: "none" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                  onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                >
+                  {obj.title}
+                </a>
+              ) : obj.title}
+            </div>
             <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: 2 }}>
-              {obj.project && <span>{obj.project} · </span>}
+              {obj.project && obj.projectSlug ? (
+                <a
+                  href={`/project/${obj.projectSlug}`}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: "var(--accent)", textDecoration: "none" }}
+                >
+                  {obj.project}
+                </a>
+              ) : obj.project ? <span>{obj.project}</span> : null}
+              {obj.project && <span> · </span>}
               {obj.keyResults.length} KR{obj.keyResults.length !== 1 && "s"}
               {obj.deadline && <span> · prazo {obj.deadline}</span>}
             </div>

@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 import { resolveProjectSlug, resolvePersonByName, toDateStr } from "@/lib/agent-helpers";
+import { gateAgentWrite } from "@/lib/maestro/agent-gating";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
+
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
 
   const params = request.nextUrl.searchParams;
   const status = params.get("status");
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
     where.assignee = { name: { contains: assigneeName, mode: "insensitive" } };
   }
 
-  const tasks = await prisma.task.findMany({
+  const tasks = await db.task.findMany({
     where,
     include: {
       project: { select: { name: true, slug: true } },
@@ -56,6 +59,9 @@ export async function POST(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
 
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
+
   const body = await request.json();
   const { title, projectSlug, assignee, status, priority, origin, deadline, aiExtracted } = body;
 
@@ -63,14 +69,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  // Resolve project and assignee in parallel
-  const [resolved, assigneeId] = await Promise.all([
-    projectSlug ? resolveProjectSlug(projectSlug) : null,
-    assignee ? resolvePersonByName(assignee) : null,
+  const isAi = aiExtracted ?? true;
+  const confidence = isAi
+    ? typeof body.aiConfidence === "number"
+      ? body.aiConfidence
+      : 0.8
+    : undefined;
+
+  // Resolve project, assignee e gating em paralelo — todas reads independentes.
+  // Maestro gating decide se a task entra `por_confirmar` (precisa validação humana)
+  // ou já confirmada, baseado no trust score do agente para "tarefa".
+  const [resolved, assigneeId, gating] = await Promise.all([
+    projectSlug ? resolveProjectSlug(db, projectSlug) : null,
+    assignee ? resolvePersonByName(db, assignee) : null,
+    isAi
+      ? gateAgentWrite({ agentId: auth.agentId, extractionType: "tarefa", confidence })
+      : Promise.resolve({ type: "executed" as const, agentId: auth.agentId, score: 100 }),
   ]);
 
-  const task = await prisma.task.create({
+  const task = await db.task.create({
     data: {
+      tenantId: "",
       title,
       projectId: resolved?.projectId ?? null,
       assigneeId,
@@ -78,11 +97,20 @@ export async function POST(request: NextRequest) {
       priority: priority ?? "media",
       origin: origin ?? `agent:${auth.agentId}`,
       deadline: deadline ? new Date(deadline) : undefined,
-      aiExtracted: aiExtracted ?? true,
-      aiConfidence: aiExtracted ? 0.8 : undefined,
-      validationStatus: aiExtracted ? "por_confirmar" : "confirmado",
+      aiExtracted: isAi,
+      aiConfidence: confidence,
+      validationStatus: gating.type === "pending" ? "por_confirmar" : "confirmado",
     },
   });
 
-  return NextResponse.json({ id: task.id, title: task.title }, { status: 201 });
+  return NextResponse.json(
+    {
+      type: gating.type,
+      id: task.id,
+      title: task.title,
+      agentId: gating.agentId,
+      currentScore: gating.score,
+    },
+    { status: 201 }
+  );
 }

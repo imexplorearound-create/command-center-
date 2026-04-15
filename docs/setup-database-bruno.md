@@ -8,7 +8,7 @@
 
 ## O que é preciso
 
-O Command Center (Next.js) precisa de uma base de dados PostgreSQL no servidor (89.167.39.10). O PostgreSQL já está a correr na porta 5432 (Docker), só falta criar a database e o user.
+O Command Center (Next.js) precisa de uma base de dados PostgreSQL no servidor (91.99.211.238). O PostgreSQL já está a correr na porta 5432 (Docker), só falta criar a database e o user.
 
 ---
 

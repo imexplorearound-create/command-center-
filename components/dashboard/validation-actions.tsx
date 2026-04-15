@@ -7,7 +7,7 @@ import {
   rejectValidation,
 } from "@/lib/actions/validation";
 
-export function ValidationActions({ itemId, title }: { itemId: string; title: string }) {
+export function ValidationActions({ itemId, title, itemKind = "task" }: { itemId: string; title: string; itemKind?: "task" | "feedback" }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -36,7 +36,7 @@ export function ValidationActions({ itemId, title }: { itemId: string; title: st
           disabled={loading}
           onClick={async () => {
             setLoading(true);
-            await editValidation(itemId, editTitle);
+            await editValidation(itemId, editTitle, itemKind);
             setDone(true);
           }}
           title="Guardar"
@@ -61,7 +61,7 @@ export function ValidationActions({ itemId, title }: { itemId: string; title: st
         disabled={loading}
         onClick={async () => {
           setLoading(true);
-          await confirmValidation(itemId);
+          await confirmValidation(itemId, itemKind);
           setDone(true);
         }}
         title="Confirmar"
@@ -81,7 +81,7 @@ export function ValidationActions({ itemId, title }: { itemId: string; title: st
         disabled={loading}
         onClick={async () => {
           setLoading(true);
-          await rejectValidation(itemId);
+          await rejectValidation(itemId, itemKind);
           setDone(true);
         }}
         title="Rejeitar"

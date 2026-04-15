@@ -3,7 +3,7 @@
 **Versao:** 1.0  
 **Data:** 5 Abril 2026  
 **Repo:** github.com/imexplorearound-create/command-center-  
-**URL:** http://89.167.39.10:3100  
+**URL:** http://91.99.211.238:3100  
 
 ---
 
@@ -21,7 +21,7 @@ Dashboard centralizado de gestao de projectos, tarefas, conteudo, OKRs e integra
 | Backend | Next.js API Routes (Server Components + Server Actions) |
 | Base de dados | PostgreSQL 16 + Prisma 7 (driver adapter) |
 | Autenticacao | JWT (jose) + bcryptjs, cookies httpOnly |
-| Servidor | VPS Hetzner (89.167.39.10), porta 3100 |
+| Servidor | VPS Hetzner (91.99.211.238), porta 3100 |
 | Pacotes | pnpm |
 
 ---

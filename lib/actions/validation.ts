@@ -1,126 +1,152 @@
 "use server";
 
-import { prisma } from "@/lib/db";
+import { getTenantDb } from "@/lib/tenant";
 import { getSession } from "@/lib/auth/session";
 import { revalidatePath } from "next/cache";
+import { recordValidation } from "@/lib/maestro/score-engine";
+import type { ValidationAction } from "@/lib/maestro/trust-rules";
+import type { Tx } from "@/lib/db";
 
-// ─── Trust Score Recalculation ─────────────────────────────
+type RunResult = { success: true } | { error: string };
 
-async function recalcTrustScore(extractionType: string) {
-  const score = await prisma.trustScore.findUnique({
-    where: { extractionType },
-  });
-  if (!score) return;
-
-  const total =
-    score.totalConfirmations + score.totalEdits + score.totalRejections;
-  if (total === 0) return;
-
-  // Score formula: confirmations add points, edits are neutral, rejections subtract
-  // Range 0-100, weighted by recency (more recent actions weigh more)
-  const raw =
-    ((score.totalConfirmations * 2 - score.totalRejections * 3) / (total * 2)) *
-    100;
-  const clamped = Math.max(0, Math.min(100, Math.round(raw)));
-
-  await prisma.trustScore.update({
-    where: { extractionType },
-    data: { score: clamped, lastInteractionAt: new Date() },
-  });
-}
-
-// ─── Validation Actions ────────────────────────────────────
-
-export async function confirmValidation(itemId: string) {
+/**
+ * Pipeline partilhado pelas 3 acções de validação:
+ *  1. auth
+ *  2. carrega task pendente
+ *  3. ATOMICAMENTE: actualiza task + escreve trust score + escreve MaestroAction
+ *  4. revalida paths
+ *
+ * `apply` recebe os campos de update específicos da acção.
+ */
+async function runValidation(
+  itemId: string,
+  action: ValidationAction,
+  apply: (task: { title: string }) => {
+    validationStatus: string;
+    title?: string;
+    originalData?: { originalTitle: string };
+  }
+): Promise<RunResult> {
   const session = await getSession();
   if (!session) return { error: "Não autenticado" };
 
-  const task = await prisma.task.findUnique({
+  const db = await getTenantDb();
+
+  const task = await db.task.findUnique({
     where: { id: itemId },
-    select: { id: true, validationStatus: true },
+    select: { id: true, title: true, validationStatus: true, archivedAt: true },
   });
-  if (!task || task.validationStatus !== "por_confirmar") {
-    return { error: "Item não encontrado ou já processado" };
+  if (!task) return { error: "Tarefa não encontrada" };
+  if (task.archivedAt) return { error: "Tarefa arquivada" };
+  if (task.validationStatus !== "por_confirmar") {
+    return { error: "Tarefa já validada" };
   }
 
-  await prisma.task.update({
-    where: { id: itemId },
-    data: {
-      validationStatus: "confirmado",
-      validatedById: session.personId,
-      validatedAt: new Date(),
-    },
-  });
+  const updates = apply(task);
+  const now = new Date();
 
-  await prisma.trustScore.updateMany({
-    where: { extractionType: "tarefa" },
-    data: { totalConfirmations: { increment: 1 } },
+  await db.$transaction(async (tx) => {
+    await tx.task.update({
+      where: { id: itemId },
+      data: {
+        validationStatus: updates.validationStatus,
+        validatedById: session.personId,
+        validatedAt: now,
+        ...(updates.title !== undefined ? { title: updates.title } : {}),
+        ...(updates.originalData !== undefined ? { originalData: updates.originalData } : {}),
+      },
+    });
+
+    await recordValidation(
+      {
+        extractionType: "tarefa",
+        action,
+        entityType: "task",
+        entityId: itemId,
+        performedById: session.personId,
+      },
+      tx as unknown as Tx
+    );
   });
-  await recalcTrustScore("tarefa");
 
   revalidatePath("/");
+  revalidatePath("/maestro");
   return { success: true };
 }
 
-export async function editValidation(itemId: string, newTitle: string) {
-  const session = await getSession();
-  if (!session) return { error: "Não autenticado" };
-
-  const task = await prisma.task.findUnique({
-    where: { id: itemId },
-    select: { id: true, title: true, validationStatus: true },
-  });
-  if (!task || task.validationStatus !== "por_confirmar") {
-    return { error: "Item não encontrado ou já processado" };
-  }
-
-  await prisma.task.update({
-    where: { id: itemId },
-    data: {
-      title: newTitle,
-      validationStatus: "editado",
-      validatedById: session.personId,
-      validatedAt: new Date(),
-      originalData: { originalTitle: task.title },
-    },
-  });
-
-  await prisma.trustScore.updateMany({
-    where: { extractionType: "tarefa" },
-    data: { totalEdits: { increment: 1 } },
-  });
-  await recalcTrustScore("tarefa");
-
-  revalidatePath("/");
-  return { success: true };
+export async function confirmValidation(
+  itemId: string,
+  itemKind: "task" | "feedback" = "task"
+): Promise<RunResult> {
+  if (itemKind === "feedback") return runFeedbackValidation(itemId, "confirmar", "accepted");
+  return runValidation(itemId, "confirmar", () => ({
+    validationStatus: "confirmado",
+  }));
 }
 
-export async function rejectValidation(itemId: string) {
+export async function editValidation(
+  itemId: string,
+  newTitle: string,
+  itemKind: "task" | "feedback" = "task"
+): Promise<RunResult> {
+  if (itemKind === "feedback") return runFeedbackValidation(itemId, "editar", "accepted", newTitle);
+  return runValidation(itemId, "editar", (task) => ({
+    validationStatus: "editado",
+    title: newTitle,
+    originalData: { originalTitle: task.title },
+  }));
+}
+
+export async function rejectValidation(
+  itemId: string,
+  itemKind: "task" | "feedback" = "task"
+): Promise<RunResult> {
+  if (itemKind === "feedback") return runFeedbackValidation(itemId, "rejeitar", "rejected");
+  return runValidation(itemId, "rejeitar", () => ({
+    validationStatus: "rejeitado",
+  }));
+}
+
+async function runFeedbackValidation(
+  feedbackItemId: string,
+  action: ValidationAction,
+  newStatus: string,
+  editedSummary?: string
+): Promise<RunResult> {
   const session = await getSession();
   if (!session) return { error: "Não autenticado" };
 
-  const task = await prisma.task.findUnique({
-    where: { id: itemId },
-    select: { id: true, validationStatus: true },
-  });
-  if (!task || task.validationStatus !== "por_confirmar") {
-    return { error: "Item não encontrado ou já processado" };
-  }
+  const db = await getTenantDb();
 
-  await prisma.task.update({
-    where: { id: itemId },
-    data: {
-      validationStatus: "rejeitado",
-      validatedById: session.personId,
-      validatedAt: new Date(),
-    },
+  const item = await db.feedbackItem.findUnique({
+    where: { id: feedbackItemId },
+    select: { id: true, status: true },
   });
+  if (!item) return { error: "Item de feedback não encontrado" };
+  if (item.status !== "pending") return { error: "Item já processado" };
 
-  await prisma.trustScore.updateMany({
-    where: { extractionType: "tarefa" },
-    data: { totalRejections: { increment: 1 } },
+  await db.$transaction(async (tx) => {
+    await tx.feedbackItem.update({
+      where: { id: feedbackItemId },
+      data: {
+        status: newStatus,
+        reviewedById: session.personId,
+        reviewedAt: new Date(),
+        ...(editedSummary ? { aiSummary: editedSummary } : {}),
+      },
+    });
+
+    await recordValidation(
+      {
+        extractionType: "feedback_teste",
+        action,
+        entityType: "interaction",
+        entityId: feedbackItemId,
+        performedById: session.personId,
+      },
+      tx as unknown as Tx
+    );
   });
-  await recalcTrustScore("tarefa");
 
   revalidatePath("/");
   return { success: true };

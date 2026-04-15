@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 import { resolvePersonByName, toDateStr } from "@/lib/agent-helpers";
 
 export async function PATCH(
@@ -11,6 +10,9 @@ export async function PATCH(
 ) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
+
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
 
   const { id } = await params;
   const body = await request.json();
@@ -23,12 +25,12 @@ export async function PATCH(
   if (body.status === "feito") data.completedAt = new Date();
 
   if (body.assignee) {
-    const personId = await resolvePersonByName(body.assignee);
+    const personId = await resolvePersonByName(db, body.assignee);
     if (personId) data.assigneeId = personId;
   }
 
   try {
-    const updated = await prisma.task.update({
+    const updated = await db.task.update({
       where: { id },
       data,
       select: { id: true, title: true, status: true },
@@ -49,8 +51,11 @@ export async function GET(
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
 
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
+
   const { id } = await params;
-  const task = await prisma.task.findUnique({
+  const task = await db.task.findFirst({
     where: { id },
     include: {
       project: { select: { name: true, slug: true } },

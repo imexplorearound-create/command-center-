@@ -13,19 +13,19 @@ interface Props {
 }
 
 export function OkrTabs({ objectives, roadmapItems, projects }: Props) {
-  const [tab, setTab] = useState<"okr" | "roadmap" | "mapa">("okr");
+  const [tab, setTab] = useState<"okr" | "roadmap" | "mapa">("mapa");
 
   return (
     <>
       <div className="cc-tabs" style={{ marginBottom: 20 }}>
+        <button className={`cc-tab ${tab === "mapa" ? "active" : ""}`} onClick={() => setTab("mapa")}>
+          Mapa
+        </button>
         <button className={`cc-tab ${tab === "okr" ? "active" : ""}`} onClick={() => setTab("okr")}>
           OKRs
         </button>
         <button className={`cc-tab ${tab === "roadmap" ? "active" : ""}`} onClick={() => setTab("roadmap")}>
           Roadmap
-        </button>
-        <button className={`cc-tab ${tab === "mapa" ? "active" : ""}`} onClick={() => setTab("mapa")}>
-          Mapa
         </button>
       </div>
 

@@ -1,24 +1,26 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
 
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
+
   const params = request.nextUrl.searchParams;
   const status = params.get("status") ?? "ativo";
   const slug = params.get("slug");
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { archivedAt: null };
   if (slug) {
     where.slug = slug;
   } else {
     where.status = status;
   }
 
-  const projects = await prisma.project.findMany({
+  const projects = await db.project.findMany({
     where,
     include: {
       _count: { select: { tasks: true } },
@@ -39,7 +41,7 @@ export async function GET(request: NextRequest) {
   });
 
   // Get task counts by status in a single query
-  const taskCounts = await prisma.task.groupBy({
+  const taskCounts = await db.task.groupBy({
     by: ["projectId", "status"],
     _count: true,
     where: { projectId: { in: projects.map((p) => p.id) } },

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
+import { resolveHeaderTenant } from "@/lib/tenant";
 import { syncGithubRepo } from "@/lib/integrations/github";
 
 /**
@@ -28,13 +28,16 @@ export async function GET(request: NextRequest) {
 
   const repoParam = request.nextUrl.searchParams.get("repo");
 
+  // Resolve tenant from header or default
+  const db = await resolveHeaderTenant(request.headers.get("x-tenant-id"));
+
   try {
     const repos = repoParam
-      ? await prisma.githubRepo.findMany({
+      ? await db.githubRepo.findMany({
           where: { repoFullName: repoParam, isActive: true },
           select: { repoFullName: true },
         })
-      : await prisma.githubRepo.findMany({
+      : await db.githubRepo.findMany({
           where: { isActive: true },
           select: { repoFullName: true },
         });

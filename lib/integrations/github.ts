@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { basePrisma, tenantPrisma } from "@/lib/db";
 import crypto from "crypto";
 
 // ─── HMAC Verification ─────────────────────────────────────
@@ -17,10 +17,13 @@ export function verifyGithubSignature(
 
 // ─── Author Mapping ────────────────────────────────────────
 
+type DB = ReturnType<typeof tenantPrisma>;
+
 async function mapAuthor(
+  db: DB,
   githubUsername: string
 ): Promise<string | null> {
-  const person = await prisma.person.findFirst({
+  const person = await db.person.findFirst({
     where: { githubUsername: { equals: githubUsername, mode: "insensitive" } },
     select: { id: true },
   });
@@ -32,6 +35,7 @@ async function mapAuthor(
 const CC_REF_PATTERN = /CC-(\d+)|#?([a-z0-9-]+)/i;
 
 async function findTaskByRef(
+  db: DB,
   text: string,
   projectId: string | null
 ): Promise<{ taskId: string; method: string; confidence: number } | null> {
@@ -41,7 +45,7 @@ async function findTaskByRef(
   const ccMatch = text.match(/CC-(\d+)/i);
   if (ccMatch) {
     // CC-## refers to task title containing that ref, or just search broadly
-    const tasks = await prisma.task.findMany({
+    const tasks = await db.task.findMany({
       where: projectId ? { projectId } : {},
       select: { id: true, title: true },
     });
@@ -61,7 +65,7 @@ async function findTaskByRef(
     .map((w) => w.toLowerCase());
 
   if (keywords.length > 0 && projectId) {
-    const tasks = await prisma.task.findMany({
+    const tasks = await db.task.findMany({
       where: { projectId, status: { not: "feito" } },
       select: { id: true, title: true },
     });
@@ -93,6 +97,7 @@ async function findTaskByRef(
 // ─── Dev Status Updates ────────────────────────────────────
 
 async function updateTaskDevStatus(
+  db: DB,
   taskId: string,
   devStatus: string,
   prData?: { number: number; status: string; url: string },
@@ -108,7 +113,7 @@ async function updateTaskDevStatus(
   }
 
   // Auto-move kanban status based on dev status
-  const task = await prisma.task.findUnique({
+  const task = await db.task.findUnique({
     where: { id: taskId },
     select: { status: true },
   });
@@ -124,12 +129,13 @@ async function updateTaskDevStatus(
     }
   }
 
-  await prisma.task.update({ where: { id: taskId }, data: updateData });
+  await db.task.update({ where: { id: taskId }, data: updateData });
 }
 
 // ─── Metrics Update ────────────────────────────────────────
 
 async function updateDailyMetrics(
+  db: DB,
   repoId: string,
   date: Date,
   field: string,
@@ -137,9 +143,9 @@ async function updateDailyMetrics(
 ) {
   const dateOnly = new Date(date.toISOString().split("T")[0]);
 
-  await prisma.devMetricsDaily.upsert({
+  await db.devMetricsDaily.upsert({
     where: { repoId_date: { repoId, date: dateOnly } },
-    create: { repoId, date: dateOnly, [field]: increment },
+    create: { repoId, date: dateOnly, [field]: increment, tenantId: "" },
     update: { [field]: { increment } },
   });
 }
@@ -154,12 +160,13 @@ export async function processGithubEvent(
     ?.full_name as string;
   if (!repoFullName) return { processed: false, reason: "no repository" };
 
-  const repo = await prisma.githubRepo.findUnique({
+  const repo = await basePrisma.githubRepo.findFirst({
     where: { repoFullName },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, tenantId: true },
   });
   if (!repo) return { processed: false, reason: "repo not registered" };
 
+  const db = tenantPrisma(repo.tenantId);
   const action = payload.action as string | undefined;
   const now = new Date();
 
@@ -171,14 +178,15 @@ export async function processGithubEvent(
 
       for (const commit of commits) {
         const author = (commit.author as Record<string, unknown>)?.username as string ?? "";
-        const authorId = await mapAuthor(author);
+        const authorId = await mapAuthor(db, author);
         const message = (commit.message as string) ?? "";
         const taskLink = await findTaskByRef(
+          db,
           message + " " + branch,
           repo.projectId
         );
 
-        await prisma.githubEvent.create({
+        await db.githubEvent.create({
           data: {
             repoId: repo.id,
             eventType: "push",
@@ -193,19 +201,20 @@ export async function processGithubEvent(
             taskLinkConfidence: taskLink?.confidence,
             rawPayload: commit as object,
             eventAt: new Date((commit.timestamp as string) ?? now),
+            tenantId: "",
           },
         });
 
         if (taskLink) {
-          await updateTaskDevStatus(taskLink.taskId, "em_desenvolvimento", undefined, branch);
-          await prisma.task.update({
+          await updateTaskDevStatus(db, taskLink.taskId, "em_desenvolvimento", undefined, branch);
+          await db.task.update({
             where: { id: taskLink.taskId },
             data: { githubLastCommitAt: now },
           });
         }
       }
 
-      await updateDailyMetrics(repo.id, now, "commitsCount", commits.length);
+      await updateDailyMetrics(db, repo.id, now, "commitsCount", commits.length);
       break;
     }
 
@@ -219,16 +228,17 @@ export async function processGithubEvent(
       const prUrl = pr.html_url as string;
       const branch = (pr.head as Record<string, unknown>)?.ref as string ?? "";
       const author = (pr.user as Record<string, unknown>)?.login as string ?? "";
-      const authorId = await mapAuthor(author);
+      const authorId = await mapAuthor(db, author);
       const isDraft = pr.draft as boolean;
       const merged = pr.merged as boolean;
 
       const taskLink = await findTaskByRef(
+        db,
         prTitle + " " + prBody + " " + branch,
         repo.projectId
       );
 
-      await prisma.githubEvent.create({
+      await db.githubEvent.create({
         data: {
           repoId: repo.id,
           eventType: "pull_request",
@@ -245,6 +255,7 @@ export async function processGithubEvent(
           taskLinkConfidence: taskLink?.confidence,
           rawPayload: { number: prNumber, title: prTitle, state: pr.state as string, draft: isDraft, merged },
           eventAt: new Date((pr.updated_at as string) ?? now),
+          tenantId: "",
         },
       });
 
@@ -267,7 +278,7 @@ export async function processGithubEvent(
           }
         }
 
-        await updateTaskDevStatus(taskLink.taskId, devStatus, {
+        await updateTaskDevStatus(db, taskLink.taskId, devStatus, {
           number: prNumber,
           status: prStatus,
           url: prUrl,
@@ -275,11 +286,11 @@ export async function processGithubEvent(
       }
 
       if (action === "opened") {
-        await updateDailyMetrics(repo.id, now, "prsOpened");
+        await updateDailyMetrics(db, repo.id, now, "prsOpened");
       } else if (action === "closed" && merged) {
-        await updateDailyMetrics(repo.id, now, "prsMerged");
+        await updateDailyMetrics(db, repo.id, now, "prsMerged");
       } else if (action === "closed" && !merged) {
-        await updateDailyMetrics(repo.id, now, "prsClosed");
+        await updateDailyMetrics(db, repo.id, now, "prsClosed");
       }
       break;
     }
@@ -295,9 +306,9 @@ export async function processGithubEvent(
       const author = (deployment.creator ?? (payload.sender as Record<string, unknown>))
         ? ((payload.sender as Record<string, unknown>)?.login as string ?? "")
         : "";
-      const authorId = await mapAuthor(author);
+      const authorId = await mapAuthor(db, author);
 
-      await prisma.githubEvent.create({
+      await db.githubEvent.create({
         data: {
           repoId: repo.id,
           eventType: eventType === "deployment_status" ? "deploy" : "workflow_run",
@@ -309,22 +320,24 @@ export async function processGithubEvent(
           url: (deployment.target_url ?? deployment.html_url) as string,
           rawPayload: { state, environment: deployment.environment as string },
           eventAt: new Date((deployment.updated_at as string) ?? now),
+          tenantId: "",
         },
       });
 
       if (isSuccess) {
-        await updateDailyMetrics(repo.id, now, "deploysSuccess");
+        await updateDailyMetrics(db, repo.id, now, "deploysSuccess");
       } else if (isFailure) {
-        await updateDailyMetrics(repo.id, now, "deploysFailed");
+        await updateDailyMetrics(db, repo.id, now, "deploysFailed");
 
         // Create alert for failed deploy
-        await prisma.alert.create({
+        await db.alert.create({
           data: {
             type: "deploy_falhado",
             severity: "critical",
             title: `Deploy falhado em ${repoFullName}`,
             description: `Estado: ${state}. Autor: ${author}`,
             relatedProjectId: repo.projectId,
+            tenantId: "",
           },
         });
       }
@@ -337,9 +350,9 @@ export async function processGithubEvent(
 
       const title = (issue.title as string) ?? "";
       const author = (issue.user as Record<string, unknown>)?.login as string ?? "";
-      const authorId = await mapAuthor(author);
+      const authorId = await mapAuthor(db, author);
 
-      await prisma.githubEvent.create({
+      await db.githubEvent.create({
         data: {
           repoId: repo.id,
           eventType: "issue",
@@ -351,14 +364,15 @@ export async function processGithubEvent(
           url: issue.html_url as string,
           rawPayload: { number: issue.number as number, title, state: issue.state as string },
           eventAt: new Date((issue.created_at as string) ?? now),
+          tenantId: "",
         },
       });
 
-      await updateDailyMetrics(repo.id, now, "issuesOpened");
+      await updateDailyMetrics(db, repo.id, now, "issuesOpened");
 
       // Create task from issue (AI-extracted, needs confirmation)
       if (repo.projectId) {
-        await prisma.task.create({
+        await db.task.create({
           data: {
             title: `[GitHub] ${title}`,
             projectId: repo.projectId,
@@ -370,6 +384,7 @@ export async function processGithubEvent(
             aiExtracted: true,
             aiConfidence: 0.6,
             validationStatus: "por_confirmar",
+            tenantId: "",
           },
         });
       }
@@ -378,18 +393,19 @@ export async function processGithubEvent(
   }
 
   // Update repo last synced
-  await prisma.githubRepo.update({
+  await db.githubRepo.update({
     where: { id: repo.id },
     data: { lastSyncedAt: now },
   });
 
   // Log sync
-  await prisma.syncLog.create({
+  await db.syncLog.create({
     data: {
       source: "github",
       action: `webhook:${eventType}`,
       status: "success",
       itemsProcessed: 1,
+      tenantId: "",
     },
   });
 
@@ -399,11 +415,13 @@ export async function processGithubEvent(
 // ─── GitHub API Polling (fallback sync) ────────────────────
 
 export async function syncGithubRepo(repoFullName: string, token: string) {
-  const repo = await prisma.githubRepo.findUnique({
+  const repo = await basePrisma.githubRepo.findFirst({
     where: { repoFullName },
-    select: { id: true, projectId: true, defaultBranch: true, lastSyncedAt: true },
+    select: { id: true, projectId: true, defaultBranch: true, lastSyncedAt: true, tenantId: true },
   });
   if (!repo) return;
+
+  const db = tenantPrisma(repo.tenantId);
 
   const since = repo.lastSyncedAt
     ? repo.lastSyncedAt.toISOString()
@@ -428,17 +446,17 @@ export async function syncGithubRepo(repoFullName: string, token: string) {
       const commits = (await commitsRes.json()) as Array<Record<string, unknown>>;
       for (const c of commits) {
         const sha = (c.sha as string).slice(0, 40);
-        const existing = await prisma.githubEvent.findFirst({
+        const existing = await db.githubEvent.findFirst({
           where: { repoId: repo.id, commitSha: sha },
         });
         if (existing) continue;
 
         const commit = c.commit as Record<string, unknown>;
         const author = (c.author as Record<string, unknown>)?.login as string ?? "";
-        const authorId = await mapAuthor(author);
+        const authorId = await mapAuthor(db, author);
         const message = (commit.message as string) ?? "";
 
-        await prisma.githubEvent.create({
+        await db.githubEvent.create({
           data: {
             repoId: repo.id,
             eventType: "push",
@@ -450,6 +468,7 @@ export async function syncGithubRepo(repoFullName: string, token: string) {
             eventAt: new Date(
               (commit.committer as Record<string, unknown>)?.date as string
             ),
+            tenantId: "",
           },
         });
         itemsProcessed++;
@@ -465,7 +484,7 @@ export async function syncGithubRepo(repoFullName: string, token: string) {
       const prs = (await prsRes.json()) as Array<Record<string, unknown>>;
       for (const pr of prs) {
         const prNumber = pr.number as number;
-        const existing = await prisma.githubEvent.findFirst({
+        const existing = await db.githubEvent.findFirst({
           where: { repoId: repo.id, prNumber, eventType: "pull_request" },
           orderBy: { eventAt: "desc" },
         });
@@ -473,9 +492,9 @@ export async function syncGithubRepo(repoFullName: string, token: string) {
         if (existing && Date.now() - existing.eventAt.getTime() < 3600000) continue;
 
         const author = (pr.user as Record<string, unknown>)?.login as string ?? "";
-        const authorId = await mapAuthor(author);
+        const authorId = await mapAuthor(db, author);
 
-        await prisma.githubEvent.create({
+        await db.githubEvent.create({
           data: {
             repoId: repo.id,
             eventType: "pull_request",
@@ -487,34 +506,37 @@ export async function syncGithubRepo(repoFullName: string, token: string) {
             prNumber,
             url: pr.html_url as string,
             eventAt: new Date((pr.updated_at as string) ?? new Date()),
+            tenantId: "",
           },
         });
         itemsProcessed++;
       }
     }
 
-    await prisma.githubRepo.update({
+    await db.githubRepo.update({
       where: { id: repo.id },
       data: { lastSyncedAt: new Date() },
     });
 
-    await prisma.syncLog.create({
+    await db.syncLog.create({
       data: {
         source: "github",
         action: `poll:${repoFullName}`,
         status: "success",
         itemsProcessed,
         durationMs: Date.now() - start,
+        tenantId: "",
       },
     });
   } catch (error) {
-    await prisma.syncLog.create({
+    await db.syncLog.create({
       data: {
         source: "github",
         action: `poll:${repoFullName}`,
         status: "error",
         errorMessage: (error as Error).message,
         durationMs: Date.now() - start,
+        tenantId: "",
       },
     });
   }
