@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { formatDateShort } from "@/lib/utils";
 import {
@@ -10,6 +11,7 @@ import {
   updateSessionStatus,
 } from "@/lib/actions/feedback-actions";
 import { useT } from "@/lib/i18n/context";
+import { SessionActions } from "../session-actions";
 
 const CLASSIFICATION_VALUES = ["bug", "suggestion", "question", "praise"] as const;
 const CLASSIFICATION_COLORS: Record<string, string> = {
@@ -31,6 +33,7 @@ interface SessionData {
   pagesVisited: string[];
   itemsCount: number;
   createdAt: string;
+  archived: boolean;
 }
 
 interface ItemData {
@@ -56,6 +59,7 @@ interface Props {
 
 export function FeedbackSessionView({ session, items }: Props) {
   const t = useT();
+  const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const classifications = useMemo(
     () =>
@@ -102,17 +106,26 @@ export function FeedbackSessionView({ session, items }: Props) {
       </div>
 
       <div className="cc-page-header">
-        <div className="cc-page-title">
-          {session.projectName} — {t("feedback.session.title_suffix")}
-        </div>
-        <div className="cc-page-subtitle">
-          {t("feedback.session.subtitle_by", {
-            tester: session.testerName,
-            date: formatDateShort(session.createdAt),
-            count: session.itemsCount,
-            label: session.itemsCount !== 1 ? t("feedback.session.notes_many") : t("feedback.session.notes_one"),
-          })}
-          {session.durationSeconds && t("feedback.session.duration", { minutes: Math.round(session.durationSeconds / 60) })}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <div className="cc-page-title">
+              {session.projectName} — {t("feedback.session.title_suffix")}
+            </div>
+            <div className="cc-page-subtitle">
+              {t("feedback.session.subtitle_by", {
+                tester: session.testerName,
+                date: formatDateShort(session.createdAt),
+                count: session.itemsCount,
+                label: session.itemsCount !== 1 ? t("feedback.session.notes_many") : t("feedback.session.notes_one"),
+              })}
+              {session.durationSeconds && t("feedback.session.duration", { minutes: Math.round(session.durationSeconds / 60) })}
+            </div>
+          </div>
+          <SessionActions
+            sessionId={session.id}
+            archived={session.archived}
+            onDeleted={() => router.push("/feedback")}
+          />
         </div>
       </div>
 

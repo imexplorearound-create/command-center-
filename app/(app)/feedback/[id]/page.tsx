@@ -52,6 +52,7 @@ export default async function FeedbackDetailPage({
         pagesVisited: session.pagesVisited,
         itemsCount: session.itemsCount,
         createdAt: session.createdAt.toISOString(),
+        archived: session.archivedAt != null,
       }}
       items={items}
     />

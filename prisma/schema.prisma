@@ -902,6 +902,7 @@ model FeedbackSession {
   aiSummary        String?   @map("ai_summary") @db.Text
   aiClassification Json?     @map("ai_classification")
   itemsCount       Int       @default(0) @map("items_count")
+  archivedAt       DateTime? @map("archived_at") @db.Timestamptz
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id])

@@ -1,5 +1,7 @@
 "use server";
 
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { getTenantDb } from "@/lib/tenant";
 import { requireAdmin } from "@/lib/auth/dal";
 import { revalidatePath } from "next/cache";
@@ -128,6 +130,70 @@ export async function updateSessionStatus(
     where: { id },
     data: { status },
   });
+
+  revalidatePath("/feedback");
+  return { success: true };
+}
+
+// ─── Archive / Unarchive Session ────────────────────────────
+
+export async function archiveSession(id: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { error: auth.error };
+
+  const db = await getTenantDb();
+  await db.feedbackSession.update({
+    where: { id },
+    data: { archivedAt: new Date() },
+  });
+
+  revalidatePath("/feedback");
+  return { success: true };
+}
+
+export async function unarchiveSession(id: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { error: auth.error };
+
+  const db = await getTenantDb();
+  await db.feedbackSession.update({
+    where: { id },
+    data: { archivedAt: null },
+  });
+
+  revalidatePath("/feedback");
+  return { success: true };
+}
+
+// ─── Delete Session (permanent, also unlinks audio files) ───
+
+export async function deleteSession(id: string): Promise<ActionResult> {
+  const auth = await requireAdmin();
+  if (!auth.ok) return { error: auth.error };
+
+  const db = await getTenantDb();
+
+  const items = await db.feedbackItem.findMany({
+    where: { sessionId: id },
+    select: { voiceAudioUrl: true },
+  });
+
+  await db.feedbackSession.delete({ where: { id } });
+
+  const publicDir = path.join(process.cwd(), "public");
+  for (const it of items) {
+    if (!it.voiceAudioUrl) continue;
+    const rel = it.voiceAudioUrl.replace(/^\//, "");
+    const abs = path.join(publicDir, rel);
+    if (!abs.startsWith(publicDir)) continue;
+    try {
+      await fs.unlink(abs);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.error("deleteSession: failed to unlink", abs, err);
+      }
+    }
+  }
 
   revalidatePath("/feedback");
   return { success: true };
