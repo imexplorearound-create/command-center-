@@ -1,6 +1,7 @@
 "use client";
 
 import { CopyButton } from "@/components/shared/copy-button";
+import { useT } from "@/lib/i18n/context";
 
 interface Project {
   id: string;
@@ -38,29 +39,30 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 export function TesterSetupView({ project, serverUrl }: Props) {
+  const t = useT();
   return (
     <>
       <div className="cc-page-header">
-        <div className="cc-page-title">🎤 Partilhar com tester</div>
-        <div className="cc-page-subtitle">
-          Gera instruções para um tester testar <strong>{project.name}</strong> com a extensão Chrome.
-        </div>
+        <div className="cc-page-title">🎤 {t("tester_setup.title")}</div>
+        <div className="cc-page-subtitle" dangerouslySetInnerHTML={{
+          __html: t("tester_setup.subtitle", { project: `<strong>${project.name}</strong>` }),
+        }} />
       </div>
 
       <div className="cc-card" style={{ padding: 20, maxWidth: 720 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>1. Dados do workspace</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{t("tester_setup.step1_title")}</div>
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
-          O tester precisa destes 2 valores para configurar o popup da extensão.
+          {t("tester_setup.step1_intro")}
         </p>
 
-        <CopyField label="Server URL" value={serverUrl} />
-        <CopyField label="Slug do projecto" value={project.slug} />
+        <CopyField label={t("tester_setup.server_url")} value={serverUrl} />
+        <CopyField label={t("tester_setup.project_slug")} value={project.slug} />
 
         <div style={{ borderTop: "1px solid var(--cc-border, #e0e0e0)", margin: "20px 0 16px" }} />
 
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>2. Criar o utilizador tester</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{t("tester_setup.step2_title")}</div>
         <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-          Corre este comando no servidor para criar a conta:
+          {t("tester_setup.step2_intro")}
         </p>
         <pre
           style={{
@@ -78,19 +80,19 @@ export function TesterSetupView({ project, serverUrl }: Props) {
 
         <div style={{ borderTop: "1px solid var(--cc-border, #e0e0e0)", margin: "20px 0 16px" }} />
 
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>3. Instruções para o tester</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{t("tester_setup.step3_title")}</div>
         <ol style={{ fontSize: 13, lineHeight: 1.7, paddingLeft: 20, color: "var(--cc-text, #111)" }}>
-          <li>Instalar a extensão Chrome <code>Command Center Feedback</code>.</li>
-          <li>Abrir o popup → aceitar o aviso de privacidade.</li>
-          <li>Colar <strong>Server URL</strong> (campo no topo).</li>
-          <li>Fazer login com email e password da conta criada em 2.</li>
-          <li>Adicionar workspace: URL do site a testar + <strong>slug do projecto</strong>.</li>
-          <li>No site autorizado, clicar no botão 🎤 flutuante para gravar feedback.</li>
+          <li dangerouslySetInnerHTML={{ __html: t("tester_setup.step3_item1") }} />
+          <li dangerouslySetInnerHTML={{ __html: t("tester_setup.step3_item2") }} />
+          <li dangerouslySetInnerHTML={{ __html: t("tester_setup.step3_item3") }} />
+          <li dangerouslySetInnerHTML={{ __html: t("tester_setup.step3_item4") }} />
+          <li dangerouslySetInnerHTML={{ __html: t("tester_setup.step3_item5") }} />
+          <li dangerouslySetInnerHTML={{ __html: t("tester_setup.step3_item6") }} />
         </ol>
 
-        <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 16 }}>
-          💡 Os feedbacks aparecem em <code>/feedback</code> do lado do admin assim que são transcritos.
-        </p>
+        <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 16 }}
+          dangerouslySetInnerHTML={{ __html: t("tester_setup.tip") }}
+        />
       </div>
     </>
   );

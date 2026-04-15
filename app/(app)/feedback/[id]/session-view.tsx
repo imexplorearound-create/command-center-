@@ -6,17 +6,18 @@ import { toast } from "sonner";
 import { formatDateShort } from "@/lib/utils";
 import {
   classifyFeedbackItem,
-  updateFeedbackItemStatus,
   convertFeedbackToTask,
   updateSessionStatus,
 } from "@/lib/actions/feedback-actions";
+import { useT } from "@/lib/i18n/context";
 
-const CLASSIFICATIONS = [
-  { value: "bug", label: "🐛 Bug", color: "#E53935" },
-  { value: "suggestion", label: "💡 Sugestão", color: "#378ADD" },
-  { value: "question", label: "❓ Questão", color: "#F9A825" },
-  { value: "praise", label: "👏 Elogio", color: "#4CAF50" },
-];
+const CLASSIFICATION_VALUES = ["bug", "suggestion", "question", "praise"] as const;
+const CLASSIFICATION_COLORS: Record<string, string> = {
+  bug: "#E53935",
+  suggestion: "#378ADD",
+  question: "#F9A825",
+  praise: "#4CAF50",
+};
 
 interface SessionData {
   id: string;
@@ -54,14 +55,20 @@ interface Props {
 }
 
 export function FeedbackSessionView({ session, items }: Props) {
+  const t = useT();
   const [pending, setPending] = useState<string | null>(null);
+  const classifications = CLASSIFICATION_VALUES.map((value) => ({
+    value,
+    label: t(`feedback.class.${value}`),
+    color: CLASSIFICATION_COLORS[value],
+  }));
 
   async function handleClassify(itemId: string, classification: string) {
     setPending(itemId);
     const r = await classifyFeedbackItem(itemId, classification as "bug" | "suggestion" | "question" | "praise");
     setPending(null);
     if ("error" in r) toast.error(r.error);
-    else toast.success("Classificado");
+    else toast.success(t("feedback.item.classified"));
   }
 
   async function handleConvert(itemId: string) {
@@ -69,36 +76,41 @@ export function FeedbackSessionView({ session, items }: Props) {
     const r = await convertFeedbackToTask(itemId);
     setPending(null);
     if ("error" in r) toast.error(r.error);
-    else toast.success("Tarefa criada no kanban");
+    else toast.success(t("feedback.item.task_created"));
   }
 
   async function handleMarkReady() {
     const r = await updateSessionStatus(session.id, "ready");
     if ("error" in r) toast.error(r.error);
-    else toast.success("Sessão marcada como pronta");
+    else toast.success(t("feedback.session.marked_ready"));
   }
 
   return (
     <>
       <div style={{ marginBottom: 8 }}>
         <Link href="/feedback" style={{ color: "var(--muted)", textDecoration: "none", fontSize: "0.82rem" }}>
-          ← Feedback
+          ← {t("feedback.session.back")}
         </Link>
       </div>
 
       <div className="cc-page-header">
         <div className="cc-page-title">
-          {session.projectName} — Feedback
+          {session.projectName} — {t("feedback.session.title_suffix")}
         </div>
         <div className="cc-page-subtitle">
-          por {session.testerName} · {formatDateShort(session.createdAt)} · {session.itemsCount} nota{session.itemsCount !== 1 ? "s" : ""}
-          {session.durationSeconds && ` · ${Math.round(session.durationSeconds / 60)}min`}
+          {t("feedback.session.subtitle_by", {
+            tester: session.testerName,
+            date: formatDateShort(session.createdAt),
+            count: session.itemsCount,
+            label: session.itemsCount !== 1 ? t("feedback.session.notes_many") : t("feedback.session.notes_one"),
+          })}
+          {session.durationSeconds && t("feedback.session.duration", { minutes: Math.round(session.durationSeconds / 60) })}
         </div>
       </div>
 
       {session.status === "processing" && (
         <div className="cc-card" style={{ padding: "10px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ color: "var(--yellow)", fontSize: "0.85rem" }}>Sessão em processamento</span>
+          <span style={{ color: "var(--yellow)", fontSize: "0.85rem" }}>{t("feedback.session.processing")}</span>
           <button
             onClick={handleMarkReady}
             style={{
@@ -111,14 +123,14 @@ export function FeedbackSessionView({ session, items }: Props) {
               cursor: "pointer",
             }}
           >
-            Marcar como pronta
+            {t("feedback.session.mark_ready")}
           </button>
         </div>
       )}
 
       {session.pagesVisited.length > 0 && (
         <div className="cc-card" style={{ padding: "10px 16px", marginBottom: 12 }}>
-          <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>Páginas visitadas</div>
+          <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: 4 }}>{t("feedback.session.pages_visited")}</div>
           <div style={{ fontSize: "0.82rem", display: "flex", flexWrap: "wrap", gap: 6 }}>
             {session.pagesVisited.map((url, i) => (
               <span key={i} style={{ background: "rgba(255,255,255,0.06)", padding: "2px 8px", borderRadius: 4 }}>
@@ -151,15 +163,15 @@ export function FeedbackSessionView({ session, items }: Props) {
                     fontSize: "0.75rem",
                     padding: "2px 8px",
                     borderRadius: 4,
-                    background: CLASSIFICATIONS.find((c) => c.value === item.classification)?.color ?? "#888",
+                    background: classifications.find((c) => c.value === item.classification)?.color ?? "#888",
                     color: "#fff",
                   }}>
-                    {CLASSIFICATIONS.find((c) => c.value === item.classification)?.label ?? item.classification}
+                    {classifications.find((c) => c.value === item.classification)?.label ?? item.classification}
                   </span>
                 )}
                 {item.status === "converted" && (
                   <span style={{ fontSize: "0.75rem", padding: "2px 8px", borderRadius: 4, background: "#4CAF50", color: "#fff" }}>
-                    ✓ Convertido
+                    {t("feedback.item.converted")}
                   </span>
                 )}
               </div>
@@ -195,7 +207,10 @@ export function FeedbackSessionView({ session, items }: Props) {
                     borderLeft: "3px solid #378ADD",
                   }}>
                     <div style={{ fontWeight: 600, marginBottom: 6, color: "#378ADD", fontSize: "0.75rem" }}>
-                      Timeline ({snapshot.length} evento{snapshot.length !== 1 ? "s" : ""})
+                      {t("feedback.timeline.title", {
+                        count: snapshot.length,
+                        label: snapshot.length !== 1 ? t("feedback.timeline.event_many") : t("feedback.timeline.event_one"),
+                      })}
                     </div>
                     {(snapshot as Array<Record<string, unknown>>).map((evt, i) => {
                       const icon = EVENT_ICONS[String(evt.type)] ?? "•";
@@ -203,8 +218,8 @@ export function FeedbackSessionView({ session, items }: Props) {
                       let label = String(evt.selector ?? "");
                       if (evt.type === "input" && evt.value) label += " → " + String(evt.value).slice(0, 50);
                       if (evt.type === "navigate") label = String(evt.pageUrl ?? "").replace(/https?:\/\/[^/]+/, "");
-                      if (evt.type === "modal_open") label = "Abriu: " + String(evt.text ?? "").slice(0, 60);
-                      if (evt.type === "modal_close") label = "Fechou modal";
+                      if (evt.type === "modal_open") label = t("feedback.timeline.opened") + String(evt.text ?? "").slice(0, 60);
+                      if (evt.type === "modal_close") label = t("feedback.timeline.closed");
                       if (evt.text && evt.type === "click") label += " — " + String(evt.text).slice(0, 40);
                       return (
                         <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 3, fontSize: "0.78rem" }}>
@@ -231,12 +246,12 @@ export function FeedbackSessionView({ session, items }: Props) {
                     fontFamily: "monospace",
                   }}>
                     <div style={{ fontWeight: 600, marginBottom: 4, color: "#378ADD", fontSize: "0.75rem" }}>
-                      🎯 Elemento
+                      {t("feedback.element.title")}
                     </div>
                     <div>{ctx.selector}</div>
                     {ctx.text && (
                       <div style={{ color: "var(--muted)", marginTop: 2 }}>
-                        Texto: {ctx.text.slice(0, 100)}
+                        {t("feedback.element.text", { text: ctx.text.slice(0, 100) })}
                       </div>
                     )}
                   </div>
@@ -261,7 +276,7 @@ export function FeedbackSessionView({ session, items }: Props) {
 
             {item.status !== "converted" && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {CLASSIFICATIONS.map((c) => (
+                {classifications.map((c) => (
                   <button
                     key={c.value}
                     onClick={() => handleClassify(item.id, c.value)}
@@ -296,7 +311,7 @@ export function FeedbackSessionView({ session, items }: Props) {
                     marginLeft: "auto",
                   }}
                 >
-                  📋 Criar tarefa
+                  {t("feedback.item.create_task")}
                 </button>
               </div>
             )}

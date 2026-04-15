@@ -2,9 +2,11 @@ import { getOkrObjectives, getRoadmapItems } from "@/lib/queries";
 import { getAuthUser } from "@/lib/auth/dal";
 import { getTenantDb } from "@/lib/tenant";
 import { OkrTabs } from "./okr-tabs";
+import { getServerT } from "@/lib/i18n/server";
 
 export default async function ObjectivesPage() {
   const user = await getAuthUser();
+  const t = await getServerT();
 
   const db = await getTenantDb();
 
@@ -21,8 +23,8 @@ export default async function ObjectivesPage() {
   return (
     <>
       <div className="cc-page-header">
-        <div className="cc-page-title">Estratégia</div>
-        <div className="cc-page-subtitle">OKRs e Roadmap 2026</div>
+        <div className="cc-page-title">{t("objectives.title")}</div>
+        <div className="cc-page-subtitle">{t("objectives.subtitle")}</div>
       </div>
 
       <OkrTabs

@@ -5,23 +5,24 @@ import Link from "next/link";
 import { priorityColor, formatDateShort } from "@/lib/utils";
 import type { InteractionType, InteractionData, ClientData, PersonOption } from "@/lib/types";
 import { InteractionModal } from "./interaction-modal";
+import { useT } from "@/lib/i18n/context";
 
-const TYPE_CONFIG: Record<InteractionType, { icon: string; label: string; iconClass: string }> = {
-  call: { icon: "📞", label: "Call", iconClass: "cc-feed-icon-call" },
-  email: { icon: "📧", label: "Email", iconClass: "cc-feed-icon-email" },
-  decisao: { icon: "✅", label: "Decisão", iconClass: "cc-feed-icon-decisao" },
-  documento: { icon: "📄", label: "Documento", iconClass: "cc-feed-icon-documento" },
-  tarefa: { icon: "📋", label: "Tarefa", iconClass: "cc-feed-icon-tarefa" },
-  nota: { icon: "📝", label: "Nota", iconClass: "cc-feed-icon-nota" },
+const TYPE_ICONS: Record<InteractionType, { icon: string; iconClass: string }> = {
+  call: { icon: "📞", iconClass: "cc-feed-icon-call" },
+  email: { icon: "📧", iconClass: "cc-feed-icon-email" },
+  decisao: { icon: "✅", iconClass: "cc-feed-icon-decisao" },
+  documento: { icon: "📄", iconClass: "cc-feed-icon-documento" },
+  tarefa: { icon: "📋", iconClass: "cc-feed-icon-tarefa" },
+  nota: { icon: "📝", iconClass: "cc-feed-icon-nota" },
 };
 
-const FILTER_OPTIONS: { key: InteractionType | "tudo"; label: string }[] = [
-  { key: "tudo", label: "Tudo" },
-  { key: "call", label: "Calls" },
-  { key: "email", label: "Emails" },
-  { key: "decisao", label: "Decisões" },
-  { key: "documento", label: "Docs" },
-  { key: "nota", label: "Notas" },
+const FILTER_KEYS: { key: InteractionType | "tudo"; labelKey: string }[] = [
+  { key: "tudo", labelKey: "client.filter.all" },
+  { key: "call", labelKey: "client.filter.calls" },
+  { key: "email", labelKey: "client.filter.emails" },
+  { key: "decisao", labelKey: "client.filter.decisions" },
+  { key: "documento", labelKey: "client.filter.docs" },
+  { key: "nota", labelKey: "client.filter.notes" },
 ];
 
 interface Props {
@@ -33,6 +34,7 @@ interface Props {
 }
 
 export function ClientView({ slug, projectId, projectName, client, people }: Props) {
+  const t = useT();
   const [typeFilter, setTypeFilter] = useState<InteractionType | "tudo">("tudo");
   const [personFilter, setPersonFilter] = useState<string | null>(null);
   const [modal, setModal] = useState<
@@ -56,27 +58,27 @@ export function ClientView({ slug, projectId, projectName, client, people }: Pro
       </div>
 
       <div className="cc-page-header">
-        <div className="cc-page-title">{projectName} — Cliente</div>
+        <div className="cc-page-title">{projectName} — {t("client.title_suffix")}</div>
         <div className="cc-page-subtitle">{client.companyName}</div>
       </div>
 
       <div className="cc-client-bar">
         <div className="cc-card cc-client-bar-item">
-          <div className="cc-client-bar-label">Empresa</div>
+          <div className="cc-client-bar-label">{t("client.company")}</div>
           <div className="cc-client-bar-value">{client.companyName}</div>
         </div>
         <div className="cc-card cc-client-bar-item">
-          <div className="cc-client-bar-label">Contacto principal</div>
+          <div className="cc-client-bar-label">{t("client.primary_contact")}</div>
           <div className="cc-client-bar-value">{client.primaryContact}</div>
         </div>
         <div className="cc-card cc-client-bar-item">
-          <div className="cc-client-bar-label">Estado</div>
+          <div className="cc-client-bar-label">{t("client.status")}</div>
           <div className="cc-client-bar-value" style={{ color: "var(--yellow)" }}>{client.status}</div>
         </div>
         <div className="cc-card cc-client-bar-item">
-          <div className="cc-client-bar-label">Último contacto</div>
+          <div className="cc-client-bar-label">{t("client.last_contact")}</div>
           <div className="cc-client-bar-value" style={{ color: client.daysSinceContact > 5 ? "var(--red)" : "var(--green)" }}>
-            {client.daysSinceContact}d atrás
+            {t("client.days_ago", { days: client.daysSinceContact })}
           </div>
         </div>
       </div>
@@ -99,7 +101,7 @@ export function ClientView({ slug, projectId, projectName, client, people }: Pro
       </div>
 
       <div className="cc-card cc-next-steps">
-        <div className="cc-section-title">Próximos passos</div>
+        <div className="cc-section-title">{t("client.next_steps")}</div>
         {client.nextSteps.map((step, i) => (
           <div key={i} className="cc-next-step">
             <div className="cc-next-step-left">
@@ -116,7 +118,7 @@ export function ClientView({ slug, projectId, projectName, client, people }: Pro
 
       <div className="cc-card" style={{ padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div className="cc-section-title" style={{ marginBottom: 0 }}>Feed de interacções</div>
+          <div className="cc-section-title" style={{ marginBottom: 0 }}>{t("client.feed_title")}</div>
           <button
             onClick={() => setModal({ mode: "create" })}
             style={{
@@ -130,18 +132,18 @@ export function ClientView({ slug, projectId, projectName, client, people }: Pro
               cursor: "pointer",
             }}
           >
-            + Nova interação
+            {t("client.new_interaction")}
           </button>
         </div>
 
         <div className="cc-feed-filters">
-          {FILTER_OPTIONS.map(f => (
+          {FILTER_KEYS.map(f => (
             <button
               key={f.key}
               className={`cc-feed-filter ${typeFilter === f.key ? "active" : ""}`}
               onClick={() => setTypeFilter(f.key)}
             >
-              {f.label}
+              {t(f.labelKey)}
             </button>
           ))}
           {personFilter && (
@@ -153,12 +155,12 @@ export function ClientView({ slug, projectId, projectName, client, people }: Pro
 
         {filteredInteractions.length === 0 && (
           <div style={{ textAlign: "center", padding: 32, color: "var(--muted)", fontSize: "0.85rem" }}>
-            Nenhuma interacção encontrada com estes filtros.
+            {t("client.no_interactions")}
           </div>
         )}
 
         {filteredInteractions.map(item => {
-          const cfg = TYPE_CONFIG[item.type];
+          const cfg = TYPE_ICONS[item.type];
           return (
             <div
               key={item.id}

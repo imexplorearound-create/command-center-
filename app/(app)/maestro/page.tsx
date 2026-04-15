@@ -39,7 +39,7 @@ export default async function MaestroPage() {
           {t("maestro.subtitle")}
         </div>
         <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: 8, padding: 10, background: "var(--cc-primary-bg, #f1f5f9)", borderRadius: 6 }}>
-          💡 <strong>{t("maestro.examples_label")}</strong> &quot;criar tarefa em projecto-X: refactor login&quot; · &quot;marca X como feita&quot; · &quot;atribui X ao Bruno&quot; · &quot;muda prioridade de X para alta&quot;
+          💡 <strong>{t("maestro.examples_label")}</strong> {t("maestro.examples")}
         </div>
         <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: 12 }}>
           {t("maestro.trust_score_hint")} <code>{MAESTRO_INTERNAL}</code>.
