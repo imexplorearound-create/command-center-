@@ -1,7 +1,7 @@
 "use client";
 
 import { CopyButton } from "@/components/shared/copy-button";
-import { useT } from "@/lib/i18n/context";
+import { useT, useTRich } from "@/lib/i18n/context";
 
 interface Project {
   id: string;
@@ -38,16 +38,18 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+const bold = (c: React.ReactNode) => <strong>{c}</strong>;
+const codeTag = (c: React.ReactNode) => <code>{c}</code>;
+
 export function TesterSetupView({ project, serverUrl }: Props) {
   const t = useT();
+  const tRich = useTRich();
   return (
     <>
       <div className="cc-page-header">
         <div className="cc-page-title">🎤 {t("tester_setup.title")}</div>
         <div className="cc-page-subtitle">
-          {t("tester_setup.subtitle_prefix")}
-          <strong>{project.name}</strong>
-          {t("tester_setup.subtitle_suffix")}
+          {tRich("tester_setup.subtitle", { name: () => <strong>{project.name}</strong> })}
         </div>
       </div>
 
@@ -84,30 +86,16 @@ export function TesterSetupView({ project, serverUrl }: Props) {
 
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{t("tester_setup.step3_title")}</div>
         <ol style={{ fontSize: 13, lineHeight: 1.7, paddingLeft: 20, color: "var(--cc-text, #111)" }}>
-          <li>
-            {t("tester_setup.step3_item1_before")}
-            <strong>Command Center Feedback</strong>
-            {t("tester_setup.step3_item1_after")}
-          </li>
+          <li>{tRich("tester_setup.step3_item1", { b: bold })}</li>
           <li>{t("tester_setup.step3_item2")}</li>
-          <li>
-            {t("tester_setup.step3_item3_before")}
-            <strong>{t("tester_setup.server_url")}</strong>
-            {t("tester_setup.step3_item3_after")}
-          </li>
+          <li>{tRich("tester_setup.step3_item3", { b: bold })}</li>
           <li>{t("tester_setup.step3_item4")}</li>
-          <li>
-            {t("tester_setup.step3_item5_before")}
-            <strong>{t("tester_setup.project_slug")}</strong>
-            {t("tester_setup.step3_item5_after")}
-          </li>
+          <li>{tRich("tester_setup.step3_item5", { b: bold })}</li>
           <li>{t("tester_setup.step3_item6")}</li>
         </ol>
 
         <p style={{ fontSize: 11, color: "var(--muted)", marginTop: 16 }}>
-          {t("tester_setup.tip_before")}
-          <code>/feedback</code>
-          {t("tester_setup.tip_after")}
+          {tRich("tester_setup.tip", { code: codeTag })}
         </p>
       </div>
     </>
