@@ -63,32 +63,37 @@ async function recordValidationInTx(
 
   const existing = await tx.trustScore.findFirst({
     where: { agentId, extractionType: input.extractionType },
-    select: { score: true },
+    select: { id: true, score: true },
   });
 
   const scoreBefore = existing?.score ?? 0;
   const scoreAfter = clampScore(scoreBefore, delta);
 
-  await tx.trustScore.upsert({
-    where: { tenantId_agentId_extractionType: { tenantId: "", agentId, extractionType: input.extractionType } },
-    create: {
-      tenantId: "",
-      agentId,
-      extractionType: input.extractionType,
-      score: scoreAfter,
-      totalConfirmations: input.action === "confirmar" ? 1 : 0,
-      totalEdits: input.action === "editar" ? 1 : 0,
-      totalRejections: input.action === "rejeitar" ? 1 : 0,
-      lastInteractionAt: new Date(),
-    },
-    update: {
-      score: scoreAfter,
-      totalConfirmations: input.action === "confirmar" ? { increment: 1 } : undefined,
-      totalEdits: input.action === "editar" ? { increment: 1 } : undefined,
-      totalRejections: input.action === "rejeitar" ? { increment: 1 } : undefined,
-      lastInteractionAt: new Date(),
-    },
-  });
+  if (existing) {
+    await tx.trustScore.update({
+      where: { id: existing.id },
+      data: {
+        score: scoreAfter,
+        totalConfirmations: input.action === "confirmar" ? { increment: 1 } : undefined,
+        totalEdits: input.action === "editar" ? { increment: 1 } : undefined,
+        totalRejections: input.action === "rejeitar" ? { increment: 1 } : undefined,
+        lastInteractionAt: new Date(),
+      },
+    });
+  } else {
+    await tx.trustScore.create({
+      data: {
+        tenantId: "",
+        agentId,
+        extractionType: input.extractionType,
+        score: scoreAfter,
+        totalConfirmations: input.action === "confirmar" ? 1 : 0,
+        totalEdits: input.action === "editar" ? 1 : 0,
+        totalRejections: input.action === "rejeitar" ? 1 : 0,
+        lastInteractionAt: new Date(),
+      },
+    });
+  }
 
   await tx.maestroAction.create({
     data: {
