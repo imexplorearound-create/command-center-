@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { formatDateShort } from "@/lib/utils";
@@ -57,11 +57,19 @@ interface Props {
 export function FeedbackSessionView({ session, items }: Props) {
   const t = useT();
   const [pending, setPending] = useState<string | null>(null);
-  const classifications = CLASSIFICATION_VALUES.map((value) => ({
-    value,
-    label: t(`feedback.class.${value}`),
-    color: CLASSIFICATION_COLORS[value],
-  }));
+  const classifications = useMemo(
+    () =>
+      CLASSIFICATION_VALUES.map((value) => ({
+        value,
+        label: t(`feedback.class.${value}`),
+        color: CLASSIFICATION_COLORS[value],
+      })),
+    [t]
+  );
+  const classificationByValue = useMemo(
+    () => new Map(classifications.map((c) => [c.value, c])),
+    [classifications]
+  );
 
   async function handleClassify(itemId: string, classification: string) {
     setPending(itemId);
@@ -158,17 +166,20 @@ export function FeedbackSessionView({ session, items }: Props) {
                 )}
               </div>
               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                {item.classification && (
-                  <span style={{
-                    fontSize: "0.75rem",
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    background: classifications.find((c) => c.value === item.classification)?.color ?? "#888",
-                    color: "#fff",
-                  }}>
-                    {classifications.find((c) => c.value === item.classification)?.label ?? item.classification}
-                  </span>
-                )}
+                {item.classification && (() => {
+                  const cls = classificationByValue.get(item.classification as typeof CLASSIFICATION_VALUES[number]);
+                  return (
+                    <span style={{
+                      fontSize: "0.75rem",
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      background: cls?.color ?? "#888",
+                      color: "#fff",
+                    }}>
+                      {cls?.label ?? item.classification}
+                    </span>
+                  );
+                })()}
                 {item.status === "converted" && (
                   <span style={{ fontSize: "0.75rem", padding: "2px 8px", borderRadius: 4, background: "#4CAF50", color: "#fff" }}>
                     {t("feedback.item.converted")}

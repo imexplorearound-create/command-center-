@@ -3,7 +3,7 @@
  * Pure logic vive em `trust-rules.ts`.
  */
 import { type Tx } from "@/lib/db";
-import { getTenantDb } from "@/lib/tenant";
+import { getTenantDb, getTenantId } from "@/lib/tenant";
 import {
   applyDelta,
   clampScore,
@@ -60,44 +60,40 @@ async function recordValidationInTx(
 ): Promise<RecordValidationResult> {
   const agentId = input.agentId ?? MAESTRO_INTERNAL;
   const delta = applyDelta(input.action);
+  const tenantId = await getTenantId();
 
-  const existing = await tx.trustScore.findFirst({
-    where: { agentId, extractionType: input.extractionType },
-    select: { id: true, score: true },
+  const existing = await tx.trustScore.findUnique({
+    where: { tenantId_agentId_extractionType: { tenantId, agentId, extractionType: input.extractionType } },
+    select: { score: true },
   });
 
   const scoreBefore = existing?.score ?? 0;
   const scoreAfter = clampScore(scoreBefore, delta);
 
-  if (existing) {
-    await tx.trustScore.update({
-      where: { id: existing.id },
-      data: {
-        score: scoreAfter,
-        totalConfirmations: input.action === "confirmar" ? { increment: 1 } : undefined,
-        totalEdits: input.action === "editar" ? { increment: 1 } : undefined,
-        totalRejections: input.action === "rejeitar" ? { increment: 1 } : undefined,
-        lastInteractionAt: new Date(),
-      },
-    });
-  } else {
-    await tx.trustScore.create({
-      data: {
-        tenantId: "",
-        agentId,
-        extractionType: input.extractionType,
-        score: scoreAfter,
-        totalConfirmations: input.action === "confirmar" ? 1 : 0,
-        totalEdits: input.action === "editar" ? 1 : 0,
-        totalRejections: input.action === "rejeitar" ? 1 : 0,
-        lastInteractionAt: new Date(),
-      },
-    });
-  }
+  await tx.trustScore.upsert({
+    where: { tenantId_agentId_extractionType: { tenantId, agentId, extractionType: input.extractionType } },
+    create: {
+      tenantId,
+      agentId,
+      extractionType: input.extractionType,
+      score: scoreAfter,
+      totalConfirmations: input.action === "confirmar" ? 1 : 0,
+      totalEdits: input.action === "editar" ? 1 : 0,
+      totalRejections: input.action === "rejeitar" ? 1 : 0,
+      lastInteractionAt: new Date(),
+    },
+    update: {
+      score: scoreAfter,
+      totalConfirmations: input.action === "confirmar" ? { increment: 1 } : undefined,
+      totalEdits: input.action === "editar" ? { increment: 1 } : undefined,
+      totalRejections: input.action === "rejeitar" ? { increment: 1 } : undefined,
+      lastInteractionAt: new Date(),
+    },
+  });
 
   await tx.maestroAction.create({
     data: {
-      tenantId: "",
+      tenantId,
       agentId,
       extractionType: input.extractionType,
       action: input.action,

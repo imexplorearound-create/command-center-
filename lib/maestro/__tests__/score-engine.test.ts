@@ -3,9 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => {
   const trustScore = {
     findUnique: vi.fn(),
-    findFirst: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
+    upsert: vi.fn(),
   };
   const maestroAction = { create: vi.fn() };
   const $transaction = vi.fn();
@@ -36,8 +34,8 @@ beforeEach(() => {
 });
 
 describe("recordValidation", () => {
-  it("cria trust score + regista MaestroAction quando score não existe", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue(null);
+  it("upsert + regista MaestroAction quando score não existe", async () => {
+    mocks.trustScore.findUnique.mockResolvedValue(null);
 
     const r = await recordValidation({
       extractionType: "tarefa",
@@ -48,24 +46,29 @@ describe("recordValidation", () => {
     });
 
     expect(r).toEqual({ scoreBefore: 0, scoreAfter: 2, delta: 2 });
-    expect(mocks.trustScore.create).toHaveBeenCalledTimes(1);
-    expect(mocks.trustScore.update).not.toHaveBeenCalled();
+    expect(mocks.trustScore.upsert).toHaveBeenCalledTimes(1);
 
-    const createArgs = mocks.trustScore.create.mock.calls[0][0];
-    expect(createArgs.data.agentId).toBe(MAESTRO_INTERNAL);
-    expect(createArgs.data.extractionType).toBe("tarefa");
-    expect(createArgs.data.score).toBe(2);
-    expect(createArgs.data.totalConfirmations).toBe(1);
+    const upsertArgs = mocks.trustScore.upsert.mock.calls[0][0];
+    expect(upsertArgs.where.tenantId_agentId_extractionType).toEqual({
+      tenantId: "test-tenant-id",
+      agentId: MAESTRO_INTERNAL,
+      extractionType: "tarefa",
+    });
+    expect(upsertArgs.create.tenantId).toBe("test-tenant-id");
+    expect(upsertArgs.create.score).toBe(2);
+    expect(upsertArgs.create.totalConfirmations).toBe(1);
+    expect(upsertArgs.update.score).toBe(2);
 
     const actionArgs = mocks.maestroAction.create.mock.calls[0][0];
+    expect(actionArgs.data.tenantId).toBe("test-tenant-id");
     expect(actionArgs.data.scoreDelta).toBe(2);
     expect(actionArgs.data.scoreBefore).toBe(0);
     expect(actionArgs.data.scoreAfter).toBe(2);
     expect(actionArgs.data.action).toBe("confirmar");
   });
 
-  it("actualiza + increment confirmations quando score existe", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue({ id: "ts-1", score: 10 });
+  it("upsert + increment confirmations quando score existe", async () => {
+    mocks.trustScore.findUnique.mockResolvedValue({ score: 10 });
 
     const r = await recordValidation({
       extractionType: "tarefa",
@@ -76,14 +79,13 @@ describe("recordValidation", () => {
     });
 
     expect(r).toEqual({ scoreBefore: 10, scoreAfter: 12, delta: 2 });
-    const updateArgs = mocks.trustScore.update.mock.calls[0][0];
-    expect(updateArgs.where.id).toBe("ts-1");
-    expect(updateArgs.data.score).toBe(12);
-    expect(updateArgs.data.totalConfirmations).toEqual({ increment: 1 });
+    const upsertArgs = mocks.trustScore.upsert.mock.calls[0][0];
+    expect(upsertArgs.update.score).toBe(12);
+    expect(upsertArgs.update.totalConfirmations).toEqual({ increment: 1 });
   });
 
   it("rejeitar baixa o score com -5", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue({ id: "ts-1", score: 8 });
+    mocks.trustScore.findUnique.mockResolvedValue({ score: 8 });
 
     const r = await recordValidation({
       extractionType: "tarefa",
@@ -94,13 +96,13 @@ describe("recordValidation", () => {
     });
 
     expect(r.scoreAfter).toBe(3);
-    const updateArgs = mocks.trustScore.update.mock.calls[0][0];
-    expect(updateArgs.data.score).toBe(3);
-    expect(updateArgs.data.totalRejections).toEqual({ increment: 1 });
+    const upsertArgs = mocks.trustScore.upsert.mock.calls[0][0];
+    expect(upsertArgs.update.score).toBe(3);
+    expect(upsertArgs.update.totalRejections).toEqual({ increment: 1 });
   });
 
   it("clampa em 0 quando rejeitar passa abaixo", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue({ id: "ts-1", score: 2 });
+    mocks.trustScore.findUnique.mockResolvedValue({ score: 2 });
     const r = await recordValidation({
       extractionType: "tarefa",
       action: "rejeitar",
@@ -112,7 +114,7 @@ describe("recordValidation", () => {
   });
 
   it("clampa em 100 quando confirmar passa acima", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue({ id: "ts-1", score: 99 });
+    mocks.trustScore.findUnique.mockResolvedValue({ score: 99 });
     const r = await recordValidation({
       extractionType: "tarefa",
       action: "confirmar",
@@ -124,7 +126,7 @@ describe("recordValidation", () => {
   });
 
   it("usa agentId custom se passado", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue(null);
+    mocks.trustScore.findUnique.mockResolvedValue(null);
     await recordValidation({
       agentId: "external-agent-x",
       extractionType: "decisao",
@@ -133,13 +135,13 @@ describe("recordValidation", () => {
       entityId: "t1",
       performedById: "p1",
     });
-    const createArgs = mocks.trustScore.create.mock.calls[0][0];
-    expect(createArgs.data.agentId).toBe("external-agent-x");
-    expect(createArgs.data.extractionType).toBe("decisao");
+    const upsertArgs = mocks.trustScore.upsert.mock.calls[0][0];
+    expect(upsertArgs.where.tenantId_agentId_extractionType.agentId).toBe("external-agent-x");
+    expect(upsertArgs.create.extractionType).toBe("decisao");
   });
 
   it("editar mantém o score (delta 0) mas incrementa edits", async () => {
-    mocks.trustScore.findFirst.mockResolvedValue({ id: "ts-1", score: 20 });
+    mocks.trustScore.findUnique.mockResolvedValue({ score: 20 });
     const r = await recordValidation({
       extractionType: "tarefa",
       action: "editar",
@@ -148,17 +150,13 @@ describe("recordValidation", () => {
       performedById: "p1",
     });
     expect(r.scoreAfter).toBe(20);
-    const updateArgs = mocks.trustScore.update.mock.calls[0][0];
-    expect(updateArgs.data.totalEdits).toEqual({ increment: 1 });
+    const upsertArgs = mocks.trustScore.upsert.mock.calls[0][0];
+    expect(upsertArgs.update.totalEdits).toEqual({ increment: 1 });
   });
 
   it("aceita tx externo e não abre transação própria", async () => {
     const externalTx = {
-      trustScore: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
+      trustScore: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
       maestroAction: { create: vi.fn() },
     };
     await recordValidation(
@@ -171,7 +169,7 @@ describe("recordValidation", () => {
       },
       externalTx as never
     );
-    expect(externalTx.trustScore.create).toHaveBeenCalled();
+    expect(externalTx.trustScore.upsert).toHaveBeenCalled();
     expect(externalTx.maestroAction.create).toHaveBeenCalled();
     expect(mocks.$transaction).not.toHaveBeenCalled();
   });
