@@ -58,9 +58,10 @@ describe("mapAlertSeverity", () => {
     expect(mapAlertSeverity("block")).toBe("block");
   });
 
-  it("maps medium-severity variants to 'warn'", () => {
+  it("maps medium-severity variants to 'warn' (including schema default 'warning')", () => {
     expect(mapAlertSeverity("medium")).toBe("warn");
     expect(mapAlertSeverity("warn")).toBe("warn");
+    expect(mapAlertSeverity("warning")).toBe("warn");
   });
 
   it("defaults everything else to 'pend'", () => {

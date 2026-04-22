@@ -1,14 +1,9 @@
 import { Kicker, Pill } from "@/components/cc/atoms";
+import { SEVERITY_COLOR } from "@/lib/dashboard-helpers";
 import type { OpenDecisionData } from "@/lib/types";
 
 type Props = {
   decisions: OpenDecisionData[];
-};
-
-const SEVERITY_COLOR: Record<string, string> = {
-  block: "var(--error, #C0392B)",
-  warn: "var(--warning, #D4883A)",
-  pend: "var(--accent, #B08A2C)",
 };
 
 export function DecisionsColumn({ decisions }: Props) {

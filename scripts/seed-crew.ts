@@ -74,10 +74,13 @@ async function main() {
     { crewRoleId: bySlug.qa!.id,       kind: "humano",      name: miguel.name,                 note: "fallback humano",              isPrimary: false, personId: miguel.id, apiClientId: null },
   ];
 
-  for (const e of executors) {
-    if (e.apiClientId) {
-      await prisma.executor.upsert({
-        where: { tenantId_apiClientId: { tenantId, apiClientId: e.apiClientId } },
+  const machineExecutors = executors.filter((e) => e.apiClientId !== null);
+  const humanExecutors = executors.filter((e) => e.apiClientId === null);
+
+  await Promise.all(
+    machineExecutors.map((e) =>
+      prisma.executor.upsert({
+        where: { tenantId_apiClientId: { tenantId, apiClientId: e.apiClientId! } },
         update: {
           crewRoleId: e.crewRoleId,
           kind: e.kind,
@@ -94,29 +97,33 @@ async function main() {
           note: e.note,
           isPrimary: e.isPrimary,
           personId: e.personId,
-          apiClientId: e.apiClientId,
+          apiClientId: e.apiClientId!,
         },
-      });
-    } else {
+      }),
+    ),
+  );
+
+  await Promise.all(
+    humanExecutors.map(async (e) => {
       const existing = await prisma.executor.findFirst({
         where: { tenantId, crewRoleId: e.crewRoleId, personId: e.personId, apiClientId: null },
       });
-      if (!existing) {
-        await prisma.executor.create({
-          data: {
-            tenantId,
-            crewRoleId: e.crewRoleId,
-            kind: e.kind,
-            name: e.name,
-            note: e.note,
-            isPrimary: e.isPrimary,
-            personId: e.personId,
-            apiClientId: null,
-          },
-        });
-      }
-    }
-  }
+      if (existing) return;
+      await prisma.executor.create({
+        data: {
+          tenantId,
+          crewRoleId: e.crewRoleId,
+          kind: e.kind,
+          name: e.name,
+          note: e.note,
+          isPrimary: e.isPrimary,
+          personId: e.personId,
+          apiClientId: null,
+        },
+      });
+    }),
+  );
+
   console.log(`  Executors: ${executors.length} processed`);
   console.log("Crew seed complete.");
 }

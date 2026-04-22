@@ -27,11 +27,19 @@ export function classifyBudgetAlert(
   return null;
 }
 
-/** Map Alert.severity string to the 3-level passive-alert taxonomy. */
+/** Map Alert.severity string to the 3-level passive-alert taxonomy.
+ *  Accepts both the Alert schema default ("warning") and the legacy values. */
 export function mapAlertSeverity(
   severity: string | null | undefined,
 ): "block" | "warn" | "pend" {
   if (severity === "high" || severity === "critical" || severity === "block") return "block";
-  if (severity === "medium" || severity === "warn") return "warn";
+  if (severity === "medium" || severity === "warn" || severity === "warning") return "warn";
   return "pend";
 }
+
+/** Dashboard v1 severity palette used by DecisionsColumn and AlertsPassive. */
+export const SEVERITY_COLOR: Record<"block" | "warn" | "pend", string> = {
+  block: "var(--error, #C0392B)",
+  warn: "var(--warning, #D4883A)",
+  pend: "var(--accent, #B08A2C)",
+};

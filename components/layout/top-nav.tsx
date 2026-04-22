@@ -19,16 +19,14 @@ function formatDateTime(): string {
   return `${weekday} · ${day} ${month} · ${hh}:${mm}`;
 }
 
-export function TopNav({ userName, userEmail, maestroState = "ok" }: Props) {
-  const maestroColor =
-    maestroState === "ok"
-      ? "var(--success, #2D8A5E)"
-      : maestroState === "backlog"
-        ? "var(--accent, #B08A2C)"
-        : "var(--error, #C0392B)";
+const MAESTRO_STATES: Record<"ok" | "backlog" | "down", { color: string; label: string }> = {
+  ok:      { color: "var(--success, #2D8A5E)", label: "Maestro" },
+  backlog: { color: "var(--accent, #B08A2C)",  label: "Maestro · backlog" },
+  down:    { color: "var(--error, #C0392B)",   label: "Maestro · down" },
+};
 
-  const maestroLabel =
-    maestroState === "ok" ? "Maestro" : maestroState === "backlog" ? "Maestro · backlog" : "Maestro · down";
+export function TopNav({ userName, userEmail, maestroState = "ok" }: Props) {
+  const { color: maestroColor, label: maestroLabel } = MAESTRO_STATES[maestroState];
 
   return (
     <header

@@ -1134,12 +1134,6 @@ export async function getProjectBySlug(slug: string): Promise<ProjectDetail | nu
 }
 
 // ─── Dashboard v1 · queries ──────────────────────────────────
-//
-// Stubs with the final signatures. Queries that depend only on existing tables
-// return real data immediately. `getCrew()` returns hardcoded placeholders
-// until the `CrewRole`/`Executor` migration is applied and seeded.
-// `getOpenDecisions()` returns `[]` until decision P2 (tabela vs view) is
-// resolved.
 
 import type {
   CrewRoleCardData,
@@ -1162,124 +1156,38 @@ import {
   mapAlertSeverity,
 } from "./dashboard-helpers";
 
-// Hardcoded crew defaults used while the DB seed is pending.
-const CREW_DEFAULTS: Array<{
-  slug: CrewRoleSlug;
-  name: string;
-  description: string;
-  color: string;
-  glyphKey: string;
-  executor: { kind: ExecutorKind; name: string; note: string };
-}> = [
-  {
-    slug: "pipeline",
-    name: "Pipeline",
-    description: "Leads, opportunities, outbound",
-    color: "#D4A843",
-    glyphKey: "pipeline",
-    executor: { kind: "clawbot", name: "Clawbot", note: "via Clawbot · crm-skill" },
-  },
-  {
-    slug: "comms",
-    name: "Comms",
-    description: "Conversas pós-venda e updates",
-    color: "#7C5CBF",
-    glyphKey: "comms",
-    executor: { kind: "claude-code", name: "Claude Code", note: "comms-skill" },
-  },
-  {
-    slug: "ops",
-    name: "Ops",
-    description: "Código, PRs, CI/CD",
-    color: "#3B7DD8",
-    glyphKey: "ops",
-    executor: { kind: "claude-code", name: "Claude Code", note: "build-skill · fallback Bruno" },
-  },
-  {
-    slug: "qa",
-    name: "QA",
-    description: "Triagem de feedback + validação",
-    color: "#2D8A5E",
-    glyphKey: "qa",
-    executor: { kind: "claude-code", name: "Claude Code", note: "triage-feedback" },
-  },
-];
-
-/**
- * Crew column data — one card per CrewRole. Until the DB seed is run,
- * returns hardcoded placeholders so the Dashboard renders. Once the
- * `CrewRole`/`Executor` tables exist and are seeded, swap to a real query.
- */
 export async function getCrew(): Promise<CrewRoleCardData[]> {
-  try {
-    const db = await getTenantDb();
-    // Probe: if the migration hasn't been applied, this throws and we fall
-    // back to the defaults below.
-    const roles = await (db as unknown as {
-      crewRole: {
-        findMany: (args: unknown) => Promise<Array<{
-          id: string;
-          slug: string;
-          name: string;
-          description: string | null;
-          color: string;
-          glyphKey: string;
-          executors: Array<{
-            id: string;
-            kind: string;
-            name: string;
-            note: string | null;
-            isPrimary: boolean;
-          }>;
-        }>>;
-      };
-    }).crewRole.findMany({
-      orderBy: { order: "asc" },
-      include: {
-        executors: {
-          where: { archivedAt: null },
-          orderBy: { isPrimary: "desc" },
-        },
+  const db = await getTenantDb();
+  const roles = await db.crewRole.findMany({
+    orderBy: { order: "asc" },
+    include: {
+      executors: {
+        where: { archivedAt: null },
+        orderBy: { isPrimary: "desc" },
       },
-    });
+    },
+  });
 
-    if (roles.length === 0) throw new Error("no crew roles seeded");
-
-    return roles.map((r) => {
-      const primary = r.executors.find((e) => e.isPrimary) ?? r.executors[0];
-      return {
-        roleId: r.id,
-        slug: r.slug as CrewRoleSlug,
-        name: r.name,
-        description: r.description ?? "",
-        color: r.color,
-        glyphKey: r.glyphKey,
-        state: "idle" as CrewState, // real state logic lives in F2
-        executor: {
-          id: primary?.id ?? null,
-          kind: (primary?.kind ?? "manual") as ExecutorKind,
-          name: primary?.name ?? "—",
-          note: primary?.note ?? null,
-        },
-        lastLine: null,
-        load: 0,
-      };
-    });
-  } catch {
-    // Migration pending — return defaults so the UI renders.
-    return CREW_DEFAULTS.map((d) => ({
-      roleId: null,
-      slug: d.slug,
-      name: d.name,
-      description: d.description,
-      color: d.color,
-      glyphKey: d.glyphKey,
-      state: "idle",
-      executor: { id: null, kind: d.executor.kind, name: d.executor.name, note: d.executor.note },
+  return roles.map((r) => {
+    const primary = r.executors.find((e) => e.isPrimary) ?? r.executors[0];
+    return {
+      roleId: r.id,
+      slug: r.slug as CrewRoleSlug,
+      name: r.name,
+      description: r.description ?? "",
+      color: r.color,
+      glyphKey: r.glyphKey,
+      state: "idle" as CrewState, // real state logic lives in F2
+      executor: {
+        id: primary?.id ?? null,
+        kind: (primary?.kind ?? "manual") as ExecutorKind,
+        name: primary?.name ?? "—",
+        note: primary?.note ?? null,
+      },
       lastLine: null,
       load: 0,
-    }));
-  }
+    };
+  });
 }
 
 /**
@@ -1408,6 +1316,7 @@ export async function getPipelineValue(): Promise<PipelineValueData> {
     where: {
       archivedAt: null,
       closedAt: null,
+      value: { not: null },
     },
     select: { value: true, probability: true, currency: true },
   });
@@ -1415,7 +1324,6 @@ export async function getPipelineValue(): Promise<PipelineValueData> {
   let totalCents = 0;
   let currency = "EUR";
   for (const o of opps) {
-    if (!o.value) continue;
     const euros = Number(o.value);
     const prob = o.probability / 100;
     totalCents += Math.round(euros * 100 * prob);
@@ -1473,8 +1381,13 @@ export async function getPassiveAlerts(): Promise<PassiveAlertData[]> {
   });
 
   for (const m of maps) {
-    const allocated = m.rubrics.reduce((sum, r) => sum + Number(r.budgetAllocated ?? 0), 0);
-    const executed = m.rubrics.reduce((sum, r) => sum + Number(r.budgetExecuted ?? 0), 0);
+    const { allocated, executed } = m.rubrics.reduce(
+      (acc, r) => ({
+        allocated: acc.allocated + Number(r.budgetAllocated ?? 0),
+        executed: acc.executed + Number(r.budgetExecuted ?? 0),
+      }),
+      { allocated: 0, executed: 0 },
+    );
     const severity = classifyBudgetAlert(executed, allocated);
     if (!severity) continue;
 

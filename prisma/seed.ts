@@ -294,35 +294,43 @@ async function main() {
     { crewRoleId: bySlug.qa!.id,       kind: "humano",      name: "Miguel Martins",            note: "fallback humano",              isPrimary: false, personId: miguel.id, apiClientId: null },
   ];
 
-  for (const e of executors) {
-    if (e.apiClientId) {
-      await prisma.executor.upsert({
-        where: { tenantId_apiClientId: { tenantId, apiClientId: e.apiClientId } },
-        update: {
-          crewRoleId: e.crewRoleId,
-          kind: e.kind,
-          name: e.name,
-          note: e.note,
-          isPrimary: e.isPrimary,
-          personId: e.personId ?? null,
-        },
-        create: {
-          tenantId,
-          crewRoleId: e.crewRoleId,
-          kind: e.kind,
-          name: e.name,
-          note: e.note,
-          isPrimary: e.isPrimary,
-          personId: e.personId ?? null,
-          apiClientId: e.apiClientId,
-        },
-      });
-    } else {
-      // Human fallbacks (apiClientId=null) — find-or-create by (crewRoleId, personId).
-      const existing = await prisma.executor.findFirst({
-        where: { tenantId, crewRoleId: e.crewRoleId, personId: e.personId, apiClientId: null },
-      });
-      if (!existing) {
+  await Promise.all(
+    executors
+      .filter((e) => e.apiClientId !== null)
+      .map((e) =>
+        prisma.executor.upsert({
+          where: { tenantId_apiClientId: { tenantId, apiClientId: e.apiClientId! } },
+          update: {
+            crewRoleId: e.crewRoleId,
+            kind: e.kind,
+            name: e.name,
+            note: e.note,
+            isPrimary: e.isPrimary,
+            personId: e.personId ?? null,
+          },
+          create: {
+            tenantId,
+            crewRoleId: e.crewRoleId,
+            kind: e.kind,
+            name: e.name,
+            note: e.note,
+            isPrimary: e.isPrimary,
+            personId: e.personId ?? null,
+            apiClientId: e.apiClientId!,
+          },
+        }),
+      ),
+  );
+
+  // Human fallbacks (apiClientId=null) — find-or-create by (crewRoleId, personId).
+  await Promise.all(
+    executors
+      .filter((e) => e.apiClientId === null)
+      .map(async (e) => {
+        const existing = await prisma.executor.findFirst({
+          where: { tenantId, crewRoleId: e.crewRoleId, personId: e.personId, apiClientId: null },
+        });
+        if (existing) return;
         await prisma.executor.create({
           data: {
             tenantId,
@@ -335,9 +343,8 @@ async function main() {
             apiClientId: null,
           },
         });
-      }
-    }
-  }
+      }),
+  );
   console.log("  Executors ready:", executors.length);
 
   console.log("Seed complete!");

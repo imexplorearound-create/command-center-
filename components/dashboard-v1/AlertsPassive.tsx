@@ -1,15 +1,10 @@
 import Link from "next/link";
 import { Kicker } from "@/components/cc/atoms";
+import { SEVERITY_COLOR } from "@/lib/dashboard-helpers";
 import type { PassiveAlertData } from "@/lib/types";
 
 type Props = {
   alerts: PassiveAlertData[];
-};
-
-const SEVERITY_COLOR: Record<string, string> = {
-  block: "var(--error, #C0392B)",
-  warn: "var(--warning, #D4883A)",
-  pend: "var(--accent, #B08A2C)",
 };
 
 export function AlertsPassive({ alerts }: Props) {
