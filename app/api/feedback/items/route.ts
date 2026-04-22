@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
+import { NOT_ARCHIVED_FEEDBACK_ITEM } from "@/lib/queries";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
   const status = params.get("status");
   const limit = Math.min(parseInt(params.get("limit") ?? "50"), 200);
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { ...NOT_ARCHIVED_FEEDBACK_ITEM };
   if (sessionId) where.sessionId = sessionId;
   if (classification) where.classification = classification;
   if (module) where.module = { contains: module, mode: "insensitive" };

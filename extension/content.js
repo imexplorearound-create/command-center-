@@ -246,9 +246,22 @@
   btn.title = "Gravar nota de voz";
   document.body.appendChild(btn);
 
+  var CAM_BTN_TITLE = "Capturar screenshot (Alt+S para modais)";
+
+  var camBtn = document.createElement("button");
+  camBtn.className = "cc-feedback-camera-btn";
+  camBtn.textContent = "📷";
+  camBtn.title = CAM_BTN_TITLE;
+  camBtn.style.display = "none";
+  document.body.appendChild(camBtn);
+
   var toastEl = document.createElement("div");
   toastEl.className = "cc-feedback-toast";
   document.body.appendChild(toastEl);
+
+  var capturedShots = [];
+  var isCapturing = false;
+  var MAX_MANUAL_SHOTS = 10;
 
   function showToast(message, isError) {
     toastEl.textContent = "";
@@ -263,6 +276,44 @@
     toastEl.classList.add("cc-feedback-toast--visible");
     setTimeout(function () { toastEl.classList.remove("cc-feedback-toast--visible"); }, 4000);
   }
+
+  function triggerManualCapture() {
+    if (!isRecording || isCapturing) return;
+    if (capturedShots.length >= MAX_MANUAL_SHOTS) {
+      showToast("Limite de " + MAX_MANUAL_SHOTS + " capturas atingido.", true);
+      return;
+    }
+    isCapturing = true;
+    camBtn.textContent = "⏳";
+    camBtn.title = "A capturar...";
+    var shotTimestampMs = relativeMs();
+    captureScreenshot(function (dataUrl) {
+      isCapturing = false;
+      camBtn.textContent = "📷";
+      camBtn.title = CAM_BTN_TITLE;
+      if (!dataUrl) {
+        showToast("Falha ao capturar screenshot.", true);
+        return;
+      }
+      capturedShots.push({ timestampMs: shotTimestampMs, dataUrl: dataUrl });
+      recordedEvents.push({ type: "screenshot", timestampMs: shotTimestampMs });
+      showToast("📸 captado (" + capturedShots.length + ")", false);
+    });
+  }
+
+  camBtn.addEventListener("click", triggerManualCapture);
+
+  // Atalho Alt+S para capturar sem tirar foco do elemento activo — crítico
+  // para capturar modais que fecham em "click fora".
+  function onCaptureShortcut(e) {
+    if (!isRecording) return;
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (e.key !== "s" && e.key !== "S") return;
+    e.preventDefault();
+    e.stopPropagation();
+    triggerManualCapture();
+  }
+  document.addEventListener("keydown", onCaptureShortcut, true);
 
   btn.addEventListener("click", function () {
     if (isRecording) {
@@ -292,6 +343,7 @@
   function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
       audioChunks = [];
+      capturedShots = [];
       mediaRecorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
           ? "audio/webm;codecs=opus"
@@ -303,10 +355,24 @@
       };
 
       mediaRecorder.onstop = function () {
+        // Snapshot do estado desta gravação — protege de race se uma nova
+        // startRecording() corre antes do onstop desta disparar.
+        var shots = capturedShots;
+        capturedShots = [];
+
         stream.getTracks().forEach(function (t) { t.stop(); });
         var events = stopEventRecording();
         var blob = new Blob(audioChunks, { type: "audio/webm" });
-        persistAndSend(blob, events);
+
+        if (shots.length > 0) {
+          persistAndSend(blob, events, shots[0].dataUrl, shots.slice(1));
+        } else {
+          btn.textContent = "📸";
+          btn.title = "A capturar screenshot...";
+          captureScreenshot(function (dataUrl) {
+            persistAndSend(blob, events, dataUrl, []);
+          });
+        }
       };
 
       mediaRecorder.start();
@@ -315,6 +381,7 @@
       btn.classList.add("cc-feedback-btn--recording");
       btn.textContent = "⏹";
       btn.title = "Parar gravação";
+      camBtn.style.display = "";
     }).catch(function (err) {
       showToast("Não foi possível aceder ao microfone: " + err.message, true);
     });
@@ -328,9 +395,73 @@
     btn.classList.remove("cc-feedback-btn--recording");
     btn.textContent = "🎤";
     btn.title = "Gravar nota de voz";
+    camBtn.style.display = "none";
   }
 
-  function persistAndSend(audioBlob, events) {
+  function captureScreenshot(callback) {
+    // Preferir a API nativa — captura pixels reais (inclui modais, popovers,
+    // iframes) e não tira foco do elemento activo.
+    if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+      try {
+        chrome.runtime.sendMessage({ type: "captureVisibleTab" }, function (res) {
+          var runtimeErr = chrome.runtime.lastError;
+          if (runtimeErr || !res || !res.ok) {
+            console.warn("[CC Feedback] captureVisibleTab falhou, fallback html2canvas:",
+              (runtimeErr && runtimeErr.message) || (res && res.error));
+            captureScreenshotFallback(callback);
+            return;
+          }
+          callback(res.dataUrl);
+        });
+        return;
+      } catch (err) {
+        console.warn("[CC Feedback] sendMessage falhou:", err && err.message);
+      }
+    }
+    captureScreenshotFallback(callback);
+  }
+
+  function captureScreenshotFallback(callback) {
+    if (typeof window.html2canvas !== "function") {
+      console.warn("[CC Feedback] html2canvas não carregado");
+      callback(null);
+      return;
+    }
+    var target = document.scrollingElement || document.documentElement || document.body;
+    window.html2canvas(target, {
+      logging: false,
+      backgroundColor: "#ffffff",
+      scale: Math.min(window.devicePixelRatio || 1, 1.5),
+      useCORS: true,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      x: window.scrollX || 0,
+      y: window.scrollY || 0,
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+      ignoreElements: isOurFeedbackElement,
+    }).then(function (canvas) {
+      try {
+        callback(canvas.toDataURL("image/jpeg", 0.75));
+      } catch (err) {
+        console.warn("[CC Feedback] toDataURL failed:", err && err.message);
+        callback(null);
+      }
+    }).catch(function (err) {
+      console.warn("[CC Feedback] html2canvas failed:", err && err.message);
+      callback(null);
+    });
+  }
+
+  function isOurFeedbackElement(el) {
+    return !!(el.classList && (
+      el.classList.contains("cc-feedback-btn") ||
+      el.classList.contains("cc-feedback-camera-btn") ||
+      el.classList.contains("cc-feedback-toast")
+    ));
+  }
+
+  function persistAndSend(audioBlob, events, screenshotDataUrl, extraScreenshots) {
     window.ccStorage.get().then(function (settings) {
       var metadata = {
         projectSlug: resolveProjectSlug(settings.workspaces || []),
@@ -338,6 +469,8 @@
         pageTitle: document.title,
         timestampMs: Date.now(),
         sessionId: currentSessionId,
+        screenshotDataUrl: screenshotDataUrl || null,
+        extraScreenshots: Array.isArray(extraScreenshots) ? extraScreenshots : [],
       };
 
       // Persistir SEMPRE antes de tentar enviar — falha de rede não perde gravação.
@@ -375,6 +508,12 @@
     }
     if (metadata.sessionId) {
       formData.append("sessionId", metadata.sessionId);
+    }
+    if (metadata.screenshotDataUrl) {
+      formData.append("screenshotDataUrl", metadata.screenshotDataUrl);
+    }
+    if (metadata.extraScreenshots && metadata.extraScreenshots.length > 0) {
+      formData.append("extraScreenshotsJson", JSON.stringify(metadata.extraScreenshots));
     }
 
     var MAX_RETRIES = 3;

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Command Center Feedback",
-  "version": "1.3.0",
+  "version": "1.6.0",
   "description": "Gravar notas de voz e eventos de UI enquanto testas projectos do Command Center",
   "permissions": [
     "storage",

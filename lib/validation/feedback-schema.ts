@@ -55,7 +55,23 @@ export const createFeedbackSessionSchema = z.object({
 
 export type CreateFeedbackSessionInput = z.infer<typeof createFeedbackSessionSchema>;
 
-export const feedbackPriorityEnum = z.enum(["alta", "media", "baixa"]);
+export const feedbackPriorityEnum = z.enum(["critica", "alta", "media", "baixa"]);
+export type FeedbackPriority = z.infer<typeof feedbackPriorityEnum>;
+export const FEEDBACK_PRIORITY_VALUES = feedbackPriorityEnum.options;
+
+export const SEVERITY_TO_PRIORITY = {
+  P0: "critica",
+  P1: "alta",
+  P2: "media",
+  P3: "baixa",
+} as const;
+
+export const PRIORITY_TO_SEVERITY = {
+  critica: "P0",
+  alta: "P1",
+  media: "P2",
+  baixa: "P3",
+} as const;
 
 // ─── Update Item ────────────────────────────────────────────
 
@@ -67,6 +83,24 @@ export const updateFeedbackItemSchema = z.object({
 });
 
 export type UpdateFeedbackItemInput = z.infer<typeof updateFeedbackItemSchema>;
+
+// ─── Triagem do Item ───────────────────────────────────────
+
+export const acceptanceCriteriaSchema = z
+  .array(z.object({ text: z.string().min(1).max(300), done: z.boolean().default(false) }))
+  .max(20);
+
+export const triageFieldsSchema = z.object({
+  priority: feedbackPriorityEnum,
+  classification: feedbackClassificationEnum.optional(),
+  module: z.string().max(100).optional(),
+  expectedResult: z.string().max(2000).nullable().optional(),
+  actualResult: z.string().max(2000).nullable().optional(),
+  reproSteps: z.array(z.string().min(1).max(500)).max(20).default([]),
+  acceptanceCriteria: acceptanceCriteriaSchema.default([]),
+});
+
+export type TriageFieldsInput = z.infer<typeof triageFieldsSchema>;
 
 // ─── Convert Item to Task ───────────────────────────────────
 

@@ -8,18 +8,13 @@ import { firstZodError } from "@/lib/validation/project-schema";
 import { transcribeAudio } from "@/lib/integrations/groq";
 import {
   classifyFeedback,
-  generateActionPlan,
-  isActionable,
+  extractFeedbackDraft,
 } from "@/lib/feedback-classify";
 import type { FeedbackClassification } from "@/lib/feedback-classify";
-import { notifyStakeholders } from "@/lib/notifications";
-import {
-  buildFeedbackEmailBody,
-  buildFeedbackTaskDescription,
-} from "@/lib/notifications/templates/feedback-bug";
 import { randomUUID } from "crypto";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
+import { decodeImageDataUrl } from "@/lib/feedback-utils";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildCorsHeaders, isAllowedOrigin } from "@/lib/cors";
 
@@ -132,16 +127,80 @@ export async function POST(request: NextRequest) {
   const buffer = Buffer.from(await audioFile.arrayBuffer());
   const audioUrl = `/feedback-audio/${sessionId}/${filename}`;
 
-  // writeFile e transcribeAudio usam o buffer em memória — podem correr em paralelo.
+  const MAX_SHOT_BYTES = 3_000_000;
+  const MAX_EXTRA_SHOTS = 10;
+  const shotDirAbs = join(process.cwd(), "public", "feedback-screenshots", sessionId);
+
+  const primaryDecoded = decodeImageDataUrl(formData.get("screenshotDataUrl"), MAX_SHOT_BYTES);
+  let screenshotUrl: string | null = null;
+  let primaryShot: { buffer: Buffer; filepath: string } | null = null;
+  if (primaryDecoded) {
+    const name = `${itemId}.${primaryDecoded.ext}`;
+    primaryShot = { buffer: primaryDecoded.buffer, filepath: join(shotDirAbs, name) };
+    screenshotUrl = `/feedback-screenshots/${sessionId}/${name}`;
+  }
+
+  const extraShots: Array<{ timestampMs: number; buffer: Buffer; filepath: string; url: string }> = [];
+  const extraJsonRaw = formData.get("extraScreenshotsJson");
+  if (typeof extraJsonRaw === "string" && extraJsonRaw.length > 0) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(extraJsonRaw); } catch { /* ignore */ }
+    if (Array.isArray(parsed)) {
+      for (let i = 0; i < Math.min(parsed.length, MAX_EXTRA_SHOTS); i++) {
+        const entry = parsed[i] as { timestampMs?: unknown; dataUrl?: unknown };
+        if (typeof entry?.timestampMs !== "number") continue;
+        const decoded = decodeImageDataUrl(entry.dataUrl, MAX_SHOT_BYTES);
+        if (!decoded) continue;
+        const name = `${itemId}-${i}.${decoded.ext}`;
+        extraShots.push({
+          timestampMs: entry.timestampMs,
+          buffer: decoded.buffer,
+          filepath: join(shotDirAbs, name),
+          url: `/feedback-screenshots/${sessionId}/${name}`,
+        });
+      }
+    }
+  }
+
   await mkdir(dir, { recursive: true });
+  if (primaryShot || extraShots.length > 0) {
+    await mkdir(shotDirAbs, { recursive: true });
+  }
+
   const [, transcriptResult] = await Promise.all([
     writeFile(filepath, buffer),
     transcribeAudio(buffer, `audio.${ext}`).catch((err) => {
       console.error("Whisper transcription failed:", err instanceof Error ? err.message : err);
       return "";
     }),
+    primaryShot
+      ? writeFile(primaryShot.filepath, primaryShot.buffer).catch((err) => {
+          console.error("Primary screenshot save failed:", err);
+          screenshotUrl = null;
+        })
+      : Promise.resolve(),
+    ...extraShots.map((s) =>
+      writeFile(s.filepath, s.buffer).catch((err) => {
+        console.error("Extra screenshot save failed:", err);
+        s.url = "";
+      })
+    ),
   ]);
   const transcript = transcriptResult;
+
+  if (extraShots.length > 0 && Array.isArray(contextSnapshot)) {
+    const urlByTimestamp = new Map<number, string>();
+    for (const s of extraShots) {
+      if (s.url) urlByTimestamp.set(s.timestampMs, s.url);
+    }
+    contextSnapshot = (contextSnapshot as Array<Record<string, unknown>>).map((evt) => {
+      if (evt && evt.type === "screenshot" && typeof evt.timestampMs === "number") {
+        const url = urlByTimestamp.get(evt.timestampMs);
+        if (url) return { ...evt, url };
+      }
+      return evt;
+    });
+  }
 
   // Classificação AI no hot path (best-effort, ~1-3s).
   // O actionPlan + task + notify são deferidos para fire-and-forget.
@@ -183,6 +242,7 @@ export async function POST(request: NextRequest) {
         module: aiResult?.module ?? null,
         priority: aiResult?.priority ?? null,
         aiSummary: aiResult?.summary ?? null,
+        screenshotUrl,
         status: "pending",
       },
     }),
@@ -192,11 +252,23 @@ export async function POST(request: NextRequest) {
     }),
   ]);
 
-  // Deferido: actionPlan + task + notify — não bloqueia a response
-  if (aiResult && isActionable(aiResult.classification)) {
-    deferTaskAndNotify(
-      db, aiResult, transcript, itemId, sessionId, project.id, testerName,
-      data.pageUrl, audioUrl, data.projectSlug
+  // Deferido: AI preenche draft estruturado (expected/actual/repro/criteria).
+  // Task só é criada quando humano triar e clicar "converter em tarefa".
+  if (aiResult && transcript) {
+    const publicDir = join(process.cwd(), "public");
+    const shotUrls = [
+      screenshotUrl,
+      ...extraShots.filter((s) => s.url).map((s) => s.url),
+    ].filter((u): u is string => !!u);
+    const screenshotPaths = shotUrls
+      .slice(0, 5)
+      .map((u) => join(publicDir, u.replace(/^\//, "")));
+
+    deferDraftExtraction(
+      db, aiResult, transcript, itemId,
+      Array.isArray(contextSnapshot) ? contextSnapshot : undefined,
+      data.pageUrl, data.pageTitle, data.projectSlug,
+      screenshotPaths
     );
   }
 
@@ -216,77 +288,46 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Fire-and-forget: gera action plan, cria Task, notifica stakeholders.
- * Corre fora do request/response cycle para não bloquear o cliente.
+ * Fire-and-forget: chama o extractor AI e guarda o draft estruturado no item.
+ * Humano revê e confirma a triagem na UI do Command Center.
  */
-function deferTaskAndNotify(
+function deferDraftExtraction(
   db: TenantPrisma,
   aiResult: FeedbackClassification,
   transcript: string,
   itemId: string,
-  sessionId: string,
-  projectId: string,
-  testerName: string,
+  events: unknown[] | undefined,
   pageUrl: string | undefined,
-  audioUrl: string,
+  pageTitle: string | undefined,
   projectSlug: string,
+  screenshotPaths: string[],
 ): void {
   (async () => {
-    let actionPlan: string | null = null;
     try {
-      actionPlan = await generateActionPlan({
-        classification: aiResult,
+      const draft = await extractFeedbackDraft({
         transcript,
+        classification: aiResult,
+        events,
         pageUrl,
+        pageTitle,
         projectSlug,
+        screenshotPaths,
       });
-    } catch (err) {
-      console.error("Action plan generation failed:", err);
-    }
-
-    try {
-      const task = await db.task.create({
-        data: {
-          tenantId: "",
-          title: aiResult.summary,
-          description: buildFeedbackTaskDescription(
-            transcript, aiResult, actionPlan, testerName
-          ),
-          projectId,
-          status: "backlog",
-          priority: aiResult.priority ?? "media",
-          origin: "feedback",
-          originRef: itemId,
-          aiExtracted: true,
-          aiConfidence: aiResult.confidence,
-          validationStatus: "por_confirmar",
-        },
-      });
+      if (!draft) return;
 
       await db.feedbackItem.update({
         where: { id: itemId },
-        data: { taskId: task.id },
+        data: {
+          expectedResult: draft.expectedResult,
+          actualResult: draft.actualResult,
+          reproSteps: draft.reproSteps,
+          acceptanceCriteria: draft.acceptanceCriteria,
+          priority: draft.suggestedPriority,
+          aiDraftedAt: new Date(),
+        },
       });
     } catch (err) {
-      console.error("Auto-task creation failed:", err);
+      console.error("Draft extraction failed:", err);
     }
-
-    const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:3100";
-    notifyStakeholders({
-      type: aiResult.classification === "bug" ? "feedback_bug" : "feedback_suggestion",
-      recipientEmail: process.env.DEV_NOTIFICATION_EMAIL,
-      subject: `🎤 ${aiResult.classification === "bug" ? "Bug" : "Sugestão"} (${aiResult.priority}) — ${aiResult.module}`,
-      summary: aiResult.summary,
-      body: buildFeedbackEmailBody({
-        classification: aiResult,
-        actionPlan,
-        transcript,
-        testerName,
-        pageUrl,
-        audioUrl,
-        actionUrl: `${baseUrl}/feedback/${sessionId}`,
-      }),
-      actionUrl: `${baseUrl}/feedback/${sessionId}`,
-    }).catch((err) => console.error("Notification failed:", err));
-  })().catch((err) => console.error("Deferred task/notify failed:", err));
+  })().catch((err) => console.error("Deferred draft extraction failed:", err));
 }

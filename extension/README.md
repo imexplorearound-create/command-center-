@@ -40,8 +40,12 @@ Podes adicionar **vários workspaces** se testares mais que um projecto.
 2. Vê o botão 🎤 azul no canto inferior esquerdo
 3. **Clica para começar a gravar**: o botão fica vermelho a pulsar
 4. Fala o que estás a ver/sentir enquanto navegas, clicas, preenches formulários
-5. **Clica novamente para parar**: o botão envia o áudio + os eventos para o Command Center
-6. Verás uma toast com a transcrição
+5. **Capturar screenshot manualmente** (durante gravação):
+   - Botão 📷 ao lado — captura o que está visível
+   - **Atalho `Alt+S`** — captura **sem fechar** modais/popups/dropdowns abertos (o clique no botão pode fechar modais que se fecham em "click fora"; o atalho evita esse problema)
+   - Máximo 10 capturas manuais por gravação
+6. **Clica novamente para parar**: o botão envia o áudio + os eventos para o Command Center
+7. Verás uma toast com a transcrição
 
 ### 5. Privacidade
 

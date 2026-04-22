@@ -4,6 +4,7 @@ import { resolveHeaderTenant } from "@/lib/tenant";
 import { authenticateFeedbackOrAgent } from "@/lib/feedback-auth";
 import { updateFeedbackSessionSchema } from "@/lib/validation/feedback-schema";
 import { firstZodError } from "@/lib/validation/project-schema";
+import { notifyFeedbackSessionReady } from "@/lib/notifications/feedback-session-notifier";
 
 export async function GET(
   request: NextRequest,
@@ -90,22 +91,34 @@ export async function PATCH(
   if (parsed.data.endedAt) updateData.endedAt = new Date(parsed.data.endedAt);
   if (parsed.data.pagesVisited) updateData.pagesVisited = parsed.data.pagesVisited;
 
-  if (parsed.data.endedAt) {
-    const existing = await db.feedbackSession.findFirst({
-      where: { id },
-      select: { startedAt: true },
-    });
-    if (existing) {
-      updateData.durationSeconds = Math.round(
-        (new Date(parsed.data.endedAt).getTime() - existing.startedAt.getTime()) / 1000
-      );
-    }
+  const needsExisting = parsed.data.status !== undefined || parsed.data.endedAt !== undefined;
+  const existing = needsExisting
+    ? await db.feedbackSession.findFirst({
+        where: { id },
+        select: { startedAt: true, status: true },
+      })
+    : null;
+
+  if (parsed.data.endedAt && existing) {
+    updateData.durationSeconds = Math.round(
+      (new Date(parsed.data.endedAt).getTime() - existing.startedAt.getTime()) / 1000
+    );
   }
 
   const session = await db.feedbackSession.update({
     where: { id },
     data: updateData,
   });
+
+  if (
+    parsed.data.status === "ready" &&
+    existing &&
+    existing.status !== "ready"
+  ) {
+    void notifyFeedbackSessionReady(db, id).catch((err) => {
+      console.error("[feedback-session-email] failed:", err);
+    });
+  }
 
   return NextResponse.json({ id: session.id, status: session.status });
 }

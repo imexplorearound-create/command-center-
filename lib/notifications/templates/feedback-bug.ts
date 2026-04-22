@@ -1,17 +1,5 @@
 import type { FeedbackClassification } from "@/lib/feedback-classify";
-
-const CLASSIFICATION_LABELS: Record<string, string> = {
-  bug: "Bug",
-  suggestion: "Sugestão",
-  question: "Questão",
-  praise: "Elogio",
-};
-
-const PRIORITY_LABELS: Record<string, string> = {
-  alta: "Alta",
-  media: "Média",
-  baixa: "Baixa",
-};
+import { CLASSIFICATION_LABELS, PRIORITY_LABELS } from "./feedback-labels";
 
 export function buildFeedbackEmailBody(input: {
   classification: FeedbackClassification;

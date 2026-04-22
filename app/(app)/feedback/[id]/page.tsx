@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { getTenantDb } from "@/lib/tenant";
 import { requireNonClient } from "@/lib/auth/dal";
+import { parseAcceptanceCriteria } from "@/lib/feedback-utils";
+import { NOT_ARCHIVED_FEEDBACK_ITEM } from "@/lib/queries";
 import { FeedbackSessionView } from "./session-view";
 
 export default async function FeedbackDetailPage({
@@ -16,27 +18,53 @@ export default async function FeedbackDetailPage({
     where: { id },
     include: {
       project: { select: { name: true, slug: true } },
-      items: { orderBy: { timestampMs: "asc" } },
+      items: {
+        where: NOT_ARCHIVED_FEEDBACK_ITEM,
+        orderBy: { timestampMs: "asc" },
+        include: {
+          task: {
+            select: {
+              handoffStatus: true,
+              handoffAgentId: true,
+              handoffResolvedAt: true,
+            },
+          },
+        },
+      },
     },
   });
 
   if (!session) notFound();
 
-  const items = session.items.map((item) => ({
-    id: item.id,
-    type: item.type,
-    classification: item.classification,
-    priority: item.priority,
-    timestampMs: item.timestampMs ? Number(item.timestampMs) : null,
-    pageUrl: item.pageUrl,
-    pageTitle: item.pageTitle,
-    voiceAudioUrl: item.voiceAudioUrl,
-    voiceTranscript: item.voiceTranscript,
-    contextSnapshot: item.contextSnapshot as Record<string, unknown> | null,
-    taskId: item.taskId,
-    status: item.status,
-    createdAt: item.createdAt.toISOString(),
-  }));
+  const items = session.items.map((item) => {
+    const acceptanceCriteria = parseAcceptanceCriteria(item.acceptanceCriteria);
+    return {
+      id: item.id,
+      type: item.type,
+      classification: item.classification,
+      priority: item.priority,
+      module: item.module,
+      timestampMs: item.timestampMs ? Number(item.timestampMs) : null,
+      pageUrl: item.pageUrl,
+      pageTitle: item.pageTitle,
+      voiceAudioUrl: item.voiceAudioUrl,
+      voiceTranscript: item.voiceTranscript,
+      contextSnapshot: item.contextSnapshot as Record<string, unknown> | null,
+      taskId: item.taskId,
+      status: item.status,
+      createdAt: item.createdAt.toISOString(),
+      expectedResult: item.expectedResult,
+      actualResult: item.actualResult,
+      reproSteps: item.reproSteps,
+      acceptanceCriteria,
+      screenshotUrl: item.screenshotUrl,
+      aiDraftedAt: item.aiDraftedAt ? item.aiDraftedAt.toISOString() : null,
+      triagedAt: item.triagedAt ? item.triagedAt.toISOString() : null,
+      handoffStatus: item.task?.handoffStatus ?? null,
+      handoffAgentId: item.task?.handoffAgentId ?? null,
+      handoffResolvedAt: item.task?.handoffResolvedAt?.toISOString() ?? null,
+    };
+  });
 
   return (
     <FeedbackSessionView

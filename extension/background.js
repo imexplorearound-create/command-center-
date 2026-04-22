@@ -1,7 +1,7 @@
 // Service worker: regista dinamicamente os content scripts nos workspaces
 // autorizados pelo utilizador via chrome.scripting.
 
-const CONTENT_JS = ["storage.js", "queue.js", "content.js"];
+const CONTENT_JS = ["html2canvas.min.js", "storage.js", "queue.js", "content.js"];
 const CONTENT_CSS = ["styles.css"];
 const SCRIPT_ID_PREFIX = "ccfb-";
 
@@ -91,3 +91,25 @@ if (chrome.permissions && chrome.permissions.onAdded) {
 if (chrome.permissions && chrome.permissions.onRemoved) {
   chrome.permissions.onRemoved.addListener(syncWorkspaces);
 }
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "captureVisibleTab") return false;
+  const windowId = sender.tab && sender.tab.windowId;
+  const options = { format: "jpeg", quality: 85 };
+  const fail = (err) => {
+    console.warn("[CC Feedback] captureVisibleTab failed:", err && err.message);
+    sendResponse({ ok: false, error: (err && err.message) || "capture_failed" });
+  };
+  try {
+    const capture = typeof windowId === "number"
+      ? chrome.tabs.captureVisibleTab(windowId, options)
+      : chrome.tabs.captureVisibleTab(options);
+    capture
+      .then((dataUrl) => sendResponse({ ok: true, dataUrl }))
+      .catch(fail);
+  } catch (err) {
+    fail(err);
+  }
+  return true;
+});
+

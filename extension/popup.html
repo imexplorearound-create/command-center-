@@ -164,6 +164,8 @@
     }
     .gdpr-banner ul { margin: 6px 0 10px 18px; color: #bbb; font-size: 11px; }
     .gdpr-banner li { margin-bottom: 3px; }
+    .tips-list { margin: 6px 0 10px 18px; color: #bbb; font-size: 12px; }
+    .tips-list li { margin-bottom: 3px; }
   </style>
 </head>
 <body>
@@ -175,6 +177,7 @@
     <div>Ao usar esta extensão:</div>
     <ul>
       <li>As gravações de voz são enviadas ao servidor do Command Center e transcritas pela <strong>Groq</strong> (fora da EU).</li>
+      <li>É capturado um <strong>screenshot</strong> da página visível quando páras cada gravação — pode conter PII que estiver no ecrã.</li>
       <li>São guardadas encriptadas durante 90 dias e só visíveis à tua equipa.</li>
       <li>A extensão só grava nos <strong>workspaces</strong> que adicionares abaixo — nunca no resto dos sites.</li>
       <li>Podes desactivar a extensão ou apagar dados a qualquer momento.</li>
@@ -218,6 +221,13 @@
     <button id="addWorkspaceBtn">Adicionar</button>
     <div class="hint">O Chrome vai pedir permissão para o domínio.</div>
     <div class="status" id="workspaceStatus"></div>
+
+    <h2>Dicas</h2>
+    <ul class="tips-list">
+      <li>📷 botão — captura a página actual</li>
+      <li><strong>Alt+S</strong> — captura <em>sem</em> fechar modais abertos (atalho ideal para popups, dropdowns, date pickers)</li>
+      <li>Máx. 10 capturas manuais por gravação</li>
+    </ul>
   </div>
 
   <script src="storage.js"></script>
