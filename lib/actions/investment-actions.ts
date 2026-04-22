@@ -45,7 +45,7 @@ export async function createInvestmentMap(
     data: { tenantId: "", ...parsed.data },
   });
 
-  revalidatePath("/cross-projects");
+  revalidatePath("/project", "layout");
   return { success: true, data: { id: map.id } };
 }
 
@@ -73,7 +73,7 @@ export async function updateInvestmentMap(
   const db = await getTenantDb();
   await db.investmentMap.update({ where: { id }, data: parsed.data });
 
-  revalidatePath("/cross-projects");
+  revalidatePath("/project", "layout");
   return { success: true };
 }
 
@@ -102,7 +102,7 @@ export async function createRubric(
     data: { tenantId: "", ...parsed.data },
   });
 
-  revalidatePath("/cross-projects");
+  revalidatePath("/project", "layout");
   return { success: true, data: { id: rubric.id } };
 }
 
@@ -130,7 +130,7 @@ export async function updateRubric(
   const db = await getTenantDb();
   await db.investmentRubric.update({ where: { id }, data: parsed.data });
 
-  revalidatePath("/cross-projects");
+  revalidatePath("/project", "layout");
   return { success: true };
 }
 
@@ -146,7 +146,7 @@ export async function deleteRubric(id: string): Promise<ActionResult> {
     data: { archivedAt: new Date() },
   });
 
-  revalidatePath("/cross-projects");
+  revalidatePath("/project", "layout");
   return { success: true };
 }
 
@@ -177,7 +177,7 @@ export async function generateTasksFromRubric(rubricId: string): Promise<ActionR
     },
   });
 
-  revalidatePath("/cross-projects");
+  revalidatePath("/project", "layout");
   revalidatePath("/");
   return { success: true, data: { taskCount: 1 } };
 }

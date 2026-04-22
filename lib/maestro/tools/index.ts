@@ -41,13 +41,16 @@ const CORE_TOOLS: MaestroToolDef[] = [
   atribuirResponsavelTool,
   comentarTarefaTool,
   concluirTarefaTool,
+  // estadoInvestimentoTool: ficava gated por "cross-projects" (Addendum A4:
+  // rota descontinuada). Passa a acessível globalmente; investimento agora
+  // vive em /project/[slug]/financeiro.
+  estadoInvestimentoTool,
 ];
 
 const MODULE_TOOLS: Record<string, MaestroToolDef[]> = {
   crm: [listarOportunidadesTool, criarOportunidadeTool, listarClientesTool],
   timetracking: [registarHorasTool, resumoHorasTool],
   "email-sync": [pesquisarEmailsTool, categorizarEmailTool],
-  "cross-projects": [estadoInvestimentoTool],
 };
 
 /** Get all tools available for a tenant based on enabled modules. */

@@ -104,6 +104,7 @@ export function ProjectView({
         {canEdit && (
           <Link href={`/project/${slug}/tester-setup`} className="cc-tab" style={{ textDecoration: "none" }}>🎤 Tester</Link>
         )}
+        <Link href={`/project/${slug}/financeiro`} className="cc-tab" style={{ textDecoration: "none" }}>💰 Financeiro</Link>
       </div>
 
       {tab === "kanban" && (

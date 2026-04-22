@@ -63,10 +63,8 @@ const MODULE_PROMPTS: Record<string, Record<string, string>> = {
     "pt-PT": "- **Email**: Podes pesquisar emails sincronizados e ajudar na categorização (associar a projecto/cliente).",
     en: "- **Email**: You can search synced emails and help with categorization (associate with project/client).",
   },
-  "cross-projects": {
-    "pt-PT": "- **Investimento**: Podes consultar o estado de execução orçamental de projectos com mapa de investimento.",
-    en: "- **Investment**: You can check budget execution status for projects with investment maps.",
-  },
+  // "cross-projects" foi descontinuado (Addendum A4); o `estadoInvestimentoTool`
+  // passou para CORE_TOOLS e é descrito automaticamente via tool.description.
 };
 
 // ─── Builder ───────────────────────────────────────────────
