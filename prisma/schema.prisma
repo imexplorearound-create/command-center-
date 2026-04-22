@@ -306,6 +306,7 @@ model Person {
   tasks                    Task[]
   validatedTasks           Task[]                 @relation("TaskValidator")
   feedbackItemsReviewed    FeedbackItem[]         @relation("FeedbackReviewer")
+  feedbackItemsTriaged     FeedbackItem[]         @relation("FeedbackTriager")
   feedbackSessions         FeedbackSession[]      @relation("FeedbackTester")
   clientContacts           ClientContact[]
   contentApproved          ContentItem[]
@@ -376,6 +377,14 @@ model Task {
   githubLastCommitAt DateTime? @map("github_last_commit_at") @db.Timestamptz
   devStatus          String    @default("sem_codigo") @map("dev_status") @db.VarChar(50)
 
+  // Handoff para produtor externo (Bruno etc.)
+  handoffStatus     String?   @map("handoff_status") @db.VarChar(20)
+  handoffAgentId    String?   @map("handoff_agent_id") @db.VarChar(100)
+  handoffSentAt     DateTime? @map("handoff_sent_at") @db.Timestamptz
+  handoffClaimedAt  DateTime? @map("handoff_claimed_at") @db.Timestamptz
+  handoffResolvedAt DateTime? @map("handoff_resolved_at") @db.Timestamptz
+  handoffResolution Json?     @map("handoff_resolution")
+
   tenant  Tenant   @relation(fields: [tenantId], references: [id])
   project   Project?      @relation(fields: [projectId], references: [id])
   area      Area?         @relation(fields: [areaId], references: [id])
@@ -397,6 +406,7 @@ model Task {
   @@index([priority], map: "idx_tasks_priority")
   @@index([archivedAt], map: "idx_tasks_archived")
   @@index([projectId, status, kanbanOrder], map: "idx_tasks_kanban")
+  @@index([handoffStatus, handoffAgentId], map: "idx_tasks_handoff")
   @@map("tasks")
 }
 
@@ -938,16 +948,28 @@ model FeedbackItem {
   reviewedAt      DateTime? @map("reviewed_at") @db.Timestamptz
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  reproSteps         String[]  @map("repro_steps")
+  expectedResult     String?   @map("expected_result") @db.Text
+  actualResult       String?   @map("actual_result") @db.Text
+  acceptanceCriteria Json?     @map("acceptance_criteria")
+  screenshotUrl      String?   @map("screenshot_url") @db.Text
+  aiDraftedAt        DateTime? @map("ai_drafted_at") @db.Timestamptz
+  triagedAt          DateTime? @map("triaged_at") @db.Timestamptz
+  triagedById        String?   @map("triaged_by") @db.Uuid
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz
+
   tenant  Tenant   @relation(fields: [tenantId], references: [id])
   session    FeedbackSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   task       Task?           @relation("FeedbackTask", fields: [taskId], references: [id])
   reviewedBy Person?         @relation("FeedbackReviewer", fields: [reviewedById], references: [id])
+  triagedBy  Person?         @relation("FeedbackTriager", fields: [triagedById], references: [id])
 
   @@index([tenantId])
   @@index([sessionId], map: "idx_feedback_items_session")
   @@index([classification], map: "idx_feedback_items_classification")
   @@index([module], map: "idx_feedback_items_module")
   @@index([status], map: "idx_feedback_items_status")
+  @@index([archivedAt], map: "idx_feedback_items_archived")
   @@map("feedback_items")
 }
 
