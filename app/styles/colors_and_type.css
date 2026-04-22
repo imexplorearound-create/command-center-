@@ -1,0 +1,243 @@
+/*
+ * Portiqa design tokens — adopted directly by Command Center.
+ *
+ * Scoped under `.portiqa-theme` during Fase 1 to avoid clashing with the
+ * legacy design tokens in globals.css. New Dashboard v1 routes wrap their
+ * root in this class; other pages keep the legacy tokens. In a later phase,
+ * once all routes are migrated, the `.portiqa-theme` scope can be removed
+ * and these tokens promoted to `:root`.
+ *
+ * Source: /home/miguel/portiqa-landing/src/styles/styles.css (lines 1-66)
+ */
+
+.portiqa-theme {
+  /* Brand palette */
+  --midnight:    #0F1B2D;
+  --slate:       #1E2A3A;
+  --slate-2:     #253347;
+  --gold:        #B08A2C;
+  --gold-light:  #D4A843;
+  --gold-muted:  #F5E6C4;
+  --limestone:   #FAF7F2;
+  --calcada:     #E8E4DF;
+  --success:     #2D8A5E;
+  --warning:     #D4883A;
+  --error:       #C0392B;
+  --info:        #3B7DD8;
+  --ai:          #7C5CBF;
+
+  /* Semantic tokens — dark default */
+  --bg:          var(--midnight);
+  --bg-2:        var(--slate);
+  --bg-3:        var(--slate-2);
+  --ink:         #F4EFE6;
+  --ink-2:       #D9D2C4;
+  --muted:       #8A8778;
+  --muted-2:     #5A5A55;
+  --line:        rgba(255,255,255,0.08);
+  --line-2:      rgba(255,255,255,0.14);
+  --accent:      var(--gold);
+  --accent-soft: rgba(176,138,44,0.12);
+
+  --radius-card:  12px;
+  --radius-input: 8px;
+  --radius-badge: 6px;
+  --maxw:         1240px;
+  --pad:          28px;
+
+  /* Fonts are loaded via next/font/google in app/layout.tsx
+   * and exposed as --font-sans / --font-serif / --font-mono. */
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.portiqa-theme[data-theme="light"] {
+  --bg:          var(--limestone);
+  --bg-2:        #F1ECE2;
+  --bg-3:        #FFFFFF;
+  --ink:         var(--midnight);
+  --ink-2:       #2B3647;
+  --muted:       #6A6A60;
+  --muted-2:     #A8A498;
+  --line:        rgba(15,27,45,0.08);
+  --line-2:      rgba(15,27,45,0.16);
+  --accent-soft: rgba(176,138,44,0.14);
+}
+
+.portiqa-theme[data-theme="gold"] {
+  --bg:          #11182A;
+  --bg-2:        #1B2438;
+  --bg-3:        #242F47;
+  --ink:         var(--gold-muted);
+  --ink-2:       #EADCB2;
+  --muted:       #B8AA83;
+  --line:        rgba(212,168,67,0.12);
+  --line-2:      rgba(212,168,67,0.22);
+  --accent:      var(--gold-light);
+  --accent-soft: rgba(212,168,67,0.14);
+}
+
+/* ====== SEMANTIC CLASSES ======
+ * Scoped under .portiqa-theme so they only apply inside the Dashboard
+ * and other Tier-1 routes already migrated.
+ */
+
+.portiqa-theme .kicker {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.portiqa-theme .kicker-accent {
+  color: var(--accent);
+}
+
+.portiqa-theme .kicker::before {
+  content: "";
+  display: inline-block;
+  width: 24px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.4;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.portiqa-theme .display {
+  font-family: var(--font-serif);
+  font-size: clamp(40px, 6.2vw, 80px);
+  line-height: 1.02;
+  letter-spacing: -0.018em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
+}
+.portiqa-theme .display em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.portiqa-theme .h1 {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.012em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
+  max-width: 30ch;
+}
+.portiqa-theme .h1 em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.portiqa-theme .h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1.08;
+  letter-spacing: -0.012em;
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
+}
+.portiqa-theme .h2 em {
+  font-style: italic;
+  color: var(--accent);
+}
+
+.portiqa-theme .h3 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+
+.portiqa-theme .lede {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--muted);
+  text-wrap: pretty;
+  max-width: 58ch;
+}
+
+.portiqa-theme .mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.portiqa-theme .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+}
+
+.portiqa-theme .card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 18px;
+}
+
+.portiqa-theme .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.portiqa-theme .btn-primary {
+  background: var(--accent);
+  color: var(--midnight);
+  border-color: var(--accent);
+}
+.portiqa-theme .btn-primary:hover {
+  background: var(--gold-light);
+}
+.portiqa-theme .btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+.portiqa-theme .btn-ghost:hover {
+  background: var(--bg-2);
+}
+
+.portiqa-theme .hairline {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Pulse animation used by HealthIndicator for `thinking` state */
+@keyframes cc-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(0.82); }
+}
