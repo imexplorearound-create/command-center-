@@ -1,6 +1,7 @@
 export type NotificationType =
   | "feedback_bug"
   | "feedback_suggestion"
+  | "feedback_session_ready"
   | "task_assigned"
   | "task_overdue"
   | "approval_request"

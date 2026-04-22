@@ -255,6 +255,7 @@ function toDateStr(d: Date | null | undefined): string {
  * Excepção: getProjectBySlug deixa passar arquivados para URLs directas continuarem a funcionar.
  */
 export const NOT_ARCHIVED: Prisma.ProjectWhereInput = { archivedAt: null };
+export const NOT_ARCHIVED_FEEDBACK_ITEM: Prisma.FeedbackItemWhereInput = { archivedAt: null };
 
 function projectFilter(user?: AuthUser | null): Prisma.ProjectWhereInput {
   if (!user || user.role === "admin") return {};
@@ -437,6 +438,7 @@ export async function getValidationItems(): Promise<ValidationItem[]> {
     }),
     db.feedbackItem.findMany({
       where: {
+        ...NOT_ARCHIVED_FEEDBACK_ITEM,
         classification: { not: null },
         status: "pending",
         taskId: null,
