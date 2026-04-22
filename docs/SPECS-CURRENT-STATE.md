@@ -1,696 +1,571 @@
-# Command Center — Especificacao Completa (Estado Actual)
+# Command Center — Especificação Completa (Estado Actual)
 
-> Documento de referencia para projectar novas funcionalidades e planear a versao web.
-> Gerado: 2026-04-12
+> Snapshot vivo do produto. Actualiza sempre que houver mudanças estruturais.
+> **Data:** 2026-04-21
+> **Localização:** `/home/miguel/Projects/command-center/`
+> **Porto dev:** 3100
+> **DB:** PostgreSQL 16 em `localhost:5432/command_center` (user `cc`)
 
 ---
 
-## 1. Visao Geral
+## 1. Visão Geral
 
-O **Command Center** e um cockpit operacional full-stack que consolida informacao de multiplas fontes (GitHub, Gmail, Discord, Drive, OpenClaw, CSV) numa unica interface visual. Oferece visibilidade em tempo real sobre:
+O **Command Center** é um cockpit operacional multi-tenant para PMEs (até ~50 pessoas), com AI nativa. Consolida num único UI:
 
-- Projectos e fases
-- Tarefas e workflows (Kanban)
-- OKRs e objectivos estrategicos
-- Equipa, clientes e contactos
-- Pipeline de conteudo
-- Estado de desenvolvimento (integracao GitHub)
-- Feedback de utilizadores (extensao Chrome + voz)
-- Assistente AI (Maestro) com sistema de trust scores
+- Projectos + fases + kanban de tarefas
+- OKRs com 3 vistas (lista, roadmap, mapa relacional)
+- CRM (opportunities + campanhas email)
+- Client hub (timeline de interacções por cliente)
+- Workflows (templates reutilizáveis + instâncias)
+- Content pipeline (vídeo/scripts)
+- Feedback de testers (extensão Chrome com voz + screenshots + AI triage)
+- Dev metrics (integração GitHub)
+- Timetracking
+- Assistente **Maestro** (chat AI + gating por trust score)
+- Handoff protocol (delegação de tarefas a produtores externos)
 
-**Localizacao:** `/home/miguel/Projects/command-center/`
-**Porto dev:** `3100`
-**Base de dados:** PostgreSQL 16 em `localhost:5432/command_center`
+Arquitectura SaaS: cada tenant tem módulos activos/inactivos via `ModuleCatalog` + `TenantModuleConfig`, LLM configurável (MiniMax por defeito).
 
 ---
 
 ## 2. Tech Stack
 
-| Camada | Tecnologia | Versao |
+| Camada | Tecnologia | Versão |
 |--------|-----------|--------|
-| Frontend | Next.js (App Router, Server Components) | 16.2.2 |
-| UI | React | 19.2.4 |
-| Estilos | Tailwind CSS | 4 |
-| Icons | Lucide React | 1.7.0 |
-| Drag & Drop | @dnd-kit (core + sortable) | 6.3.1 / 10.0.0 |
-| Toasts | Sonner | 2.0.7 |
-| Modais | HTML nativo `<dialog>` | — |
-| Backend | Next.js API Routes + Server Actions | 16.2.2 |
-| Base de Dados | PostgreSQL | 16 |
-| ORM | Prisma (com @prisma/adapter-pg) | 7.6.0 |
-| Auth (JWT) | jose | — |
-| Passwords | bcryptjs | 3.0.3 |
-| AI | @anthropic-ai/sdk | 0.86.1 |
-| LLM endpoint | MiniMax (compativel Anthropic) | M2.7-highspeed |
-| Transcricao | Groq API (Whisper) | — |
-| Email | nodemailer | 8.0.5 |
-| Testes | Vitest + Testing Library | 4.1.3 / 16.3.2 |
-| TypeScript | Strict mode | 5 |
-| Linting | ESLint | 9 |
+| Framework | Next.js App Router + Server Components | 16.2.2 |
+| UI | React + Tailwind CSS | 19 / 4 |
+| Drag & drop | @dnd-kit/core + sortable | 6 / 10 |
+| Toasts | Sonner | 2 |
+| Modais | HTML `<dialog>` nativo | — |
+| DB | PostgreSQL + Prisma (PG adapter) | 16 / 7.6 |
+| Migrations | Versionadas em `prisma/migrations/` | — |
+| Auth | JWT (jose) + bcryptjs + httpOnly cookies (7d) | — |
+| AI chat | `@anthropic-ai/sdk` → MiniMax M2.7 | 0.86 |
+| AI vision | Google Gemini API (análise de screenshots) | — |
+| Testes | Vitest + Testing Library | 4 |
+| i18n | PT-PT (default) + EN | — |
+| Icons | Lucide React | — |
 
 ---
 
-## 3. Estrutura de Directorios
+## 3. Arquitectura
+
+### 3.1 Multi-Tenancy
+
+Cada tabela de negócio tem `tenantId`. Duas variantes de Prisma client:
+
+- **`basePrisma`** — sem filtro. Usar apenas em login, tenant resolution e scripts de migração.
+- **`tenantPrisma(tenantId)`** — injecta `tenantId` em todas as queries (where/create/upsert). Helper `getTenantDb()` resolve o tenant da sessão.
+- **Agent API:** header `X-Tenant-Id`, fallback para tenant `imexplorearound`.
+
+Resolução de tenant: `middleware.ts` lê subdomínio → header `x-tenant-slug`. Login pede slug + email.
+
+### 3.2 Módulos plugáveis
+
+- `ModuleCatalog` (global) — registo de todas as features (tier 1 core / 2 default / 3 optional / 4 experimental)
+- `TenantModuleConfig` — enable/disable por tenant + config JSON
+- Sidebar e endpoints filtram consoante módulos activos
+
+### 3.3 Roles
+
+| Role | Acesso |
+|------|--------|
+| `admin` | Total (Miguel, Bruno) |
+| `manager` | Departamentos + projectos atribuídos |
+| `membro` | Projectos via `UserProjectAccess` |
+| `cliente` | Apenas Client Hub do seu projecto |
+
+Guards em `lib/auth/dal.ts`: `requireAdmin()`, `requireWriter()` (admin+membro+manager), `requireReader()`, `requireAdminPage()` (server page redirect).
+
+### 3.4 Auth Flows
+
+- **Humanos:** POST `/api/auth/login` → JWT httpOnly cookie 7d
+- **Testers (extensão):** POST `/api/feedback/auth/login` → JWT 30d (tokens mais longos por UX)
+- **Agents OpenClaw:** Bearer `AGENT_API_SECRET` em `Authorization`
+- **Producer handoff:** Bearer específico via `lib/handoff-auth.ts`
+
+---
+
+## 4. Modelos de Dados
+
+**50+ modelos Prisma.** Agrupados por domínio:
+
+### Auth & Tenancy
+`Tenant` · `User` · `UserProjectAccess` · `UserModuleAccess` · `TenantLLMConfig`
+
+### Módulos
+`ModuleCatalog` · `TenantModuleConfig`
+
+### Projectos & Tarefas
+- `Project` (slug, status, health, progress, color, `archivedAt`)
+- `ProjectPhase` (order, status, progress, datas)
+- `Task` (status backlog/em_curso/em_revisão/feito, priority, deadline, assignee, `kanbanOrder`, phase, area; AI: `aiExtracted`, `aiConfidence`, `validationStatus`, `originalData`; GitHub: `branch`, `prNumber`, `prStatus`; **Handoff: `handoffStatus`, `handoffAgentId`, `handoffSentAt`, `handoffClaimedAt`, `handoffResolvedAt`, `handoffResolution` JSON**)
+
+### Pessoas & Áreas
+`Person` (type equipa/cliente, `costPerHour`, `weeklyHours`, `githubUsername`, `archivedAt`) · `Area` (slug, icon, color, `archivedAt`)
+
+### Objectivos
+`Objective` · `KeyResult` · `OkrSnapshot` (snapshots diários)
+
+### Clientes
+`Client` (1-1 com Project) · `ClientContact` · `Interaction` (feed AI-extractable)
+
+### Alertas
+`Alert` (severity, relatedTask/Project/Client, isDismissed)
+
+### Content pipeline
+`ContentItem` (format, status proposta/em_produção/publicado)
+
+### Maestro & Trust
+- `TrustScore` — score 0-100 por `(agentId, extractionType)`; counts confirmações/edições/rejeições
+- `MaestroAction` — log de mudanças de score (action confirmar/editar/rejeitar, delta, before, after, performedById)
+- `MaestroConversation` — chat session (ownerId, title, `archivedAt`)
+- `MaestroMessage` — (role user/assistant/tool, content, `toolCalls`, `toolResults`)
+
+### Workflows
+`WorkflowTemplate` · `WorkflowTemplateStep` (dependsOn, checklist) · `WorkflowInstance` · `WorkflowInstanceTask`
+
+### GitHub
+`GithubRepo` · `GithubEvent` (eventType, taskLinkMethod, `taskLinkConfidence`) · `DevMetricsDaily`
+
+### Feedback (extensão)
+- `FeedbackSession` — projectId, testerName, status processing/done, `startUrl`, `pagesVisited`, `eventsJson`, `aiSummary`, `aiClassification`, `itemsCount`, `archivedAt`
+- `FeedbackItem` — type, classification, `module`, priority, `timestampMs`, `cursorPosition`, `pageUrl`, `voiceAudioUrl`, `voiceTranscript`, `aiSummary`, `contextSnapshot`, `taskId` (unique), status pending/triaged/done; **campos de triagem AI: `reproSteps[]`, `expectedResult`, `actualResult`, `acceptanceCriteria` JSON, `screenshotUrl`, `aiDraftedAt`, `triagedAt`, `triagedById`, `archivedAt`**
+
+### CRM
+`Opportunity` (stageId, `kanbanOrder`, value, probability, `convertedProjectId`, `validationStatus`) · `OpportunityActivity`
+
+### Timetracking
+`TimeEntry` (date, duration, `isBillable`, status draft/approved, `approvedById`, origin manual/api, `archivedAt`)
+
+### Email
+`EmailRecord` (gmailId, threadId, direction, `isProcessed`, links a project/client/person/opportunity) · `EmailCampaign` (status draft/scheduled/sent, `audienceFilter`) · `EmailTemplate` · `CampaignRecipient`
+
+### Investimento
+`InvestmentMap` (1-1 com Project, totalBudget, `fundingSource`) · `InvestmentRubric` (line items)
+
+### Sync
+`SyncLog` (source, action, status, `itemsProcessed`, `durationMs`)
+
+---
+
+## 5. Migrations (timeline)
+
+| Data | Migration | Objectivo |
+|------|-----------|-----------|
+| baseline | `0_init` | Schema inicial (~50 modelos) |
+| 2026-04-15 | `feedback_session_archive` | `archivedAt` em FeedbackSession |
+| 2026-04-17 | `add_triage_fields_and_screenshot` | Triage fields + `screenshotUrl` em FeedbackItem |
+| 2026-04-19 | `task_handoff` | Handoff protocol em Task (6 campos) |
+| 2026-04-19 | `feedback_item_archive` | `archivedAt` em FeedbackItem |
+
+Workflow: `pnpm prisma migrate dev --name <nome>` (dev), `pnpm prisma migrate deploy` (prod/CI).
+
+---
+
+## 6. Rotas
+
+### 6.1 App (`app/(app)/` — sessão obrigatória)
+
+| Rota | Descrição |
+|------|-----------|
+| `/` | Dashboard (stats, tasks recentes, alertas, validation panel) |
+| `/project/[slug]` | Detalhe projecto: tabs Kanban, Timeline, Dev, Client Hub, Feedback |
+| `/project/[slug]/client` | Client hub (timeline de interacções) |
+| `/project/[slug]/tester-setup` | Onboarding de testers da extensão |
+| `/maestro` | Trust scores + últimas 20 MaestroActions (admin-only) |
+| `/objectives` | OKRs — 3 vistas: lista, roadmap, mapa |
+| `/workflows` | Templates + instâncias activas |
+| `/content` | Pipeline de conteúdo |
+| `/areas`, `/people` | CRUD (admin escreve, membro read, cliente redirect) |
+| `/crm` | Pipeline kanban de oportunidades |
+| `/crm/[id]` | Detalhe da opportunity + activities |
+| `/crm/campaigns`, `/crm/campaigns/new`, `/crm/campaigns/[id]` | Email campaigns |
+| `/feedback` | Sessões de teste |
+| `/feedback/[id]` | Detalhe + items + triagem |
+| `/feedback/[id]/export.md` | Export markdown |
+| `/cross-projects` | Vistas multi-projecto |
+| `/timetracking` | Log de horas |
+| `/email-sync` | Estado ingestão Gmail |
+| `/onboarding` | Setup wizard do tenant |
+| `/settings`, `/settings/notifications`, `/settings/llm` | Preferências |
+
+### 6.2 Auth (`app/(auth)/`)
+`/login` · `/forgot-password` · `/reset-password/[token]` · `/invite/[token]`
+
+### 6.3 API pública (`app/api/`)
+
+**Agent API** (Bearer `AGENT_API_SECRET`):
+- `/agent/projects`, `/agent/tasks`, `/agent/tasks/[id]`, `/agent/objectives`, `/agent/key-results/[id]`, `/agent/interactions`, `/agent/alerts`, `/agent/content`, `/agent/feedback/sessions`, `/agent/feedback/items`
+- **Handoff:** `/agent/handoffs` (GET/POST), `/agent/handoffs/[taskId]/bundle`, `/claim`, `/reject`, `/resolve`
+
+**Maestro:** `/maestro/chat` (SSE), `/maestro/conversations`, `/maestro/conversations/[id]`
+
+**Feedback:** `/feedback/auth/login`, `/feedback/sessions`, `/feedback/items`, `/feedback/items/[id]/to-task`, `/feedback/voice-note`
+
+**Sync polling:** `/sync/github`, `/sync/gmail`, `/sync/calendar`
+
+**Webhooks:** `/webhooks/github`, `/webhooks/discord`, `/webhooks/telegram`, `/webhooks/whatsapp`
+
+**Integration:** `/integration/ingest/{clients,contacts,financials}`, `/integration/export/{projects,timeentries}`
+
+**Outros:** `/handoff-asset`, `/campaigns/[id]/open` (pixel), `/export`
+
+---
+
+## 7. Maestro AI
+
+### 7.1 Trust Score System
+
+3 níveis de validação para dados AI-extracted:
+
+1. **`por_confirmar`** — humano precisa validar (badge amarelo)
+2. **`auto_confirmado`** — confiança >80%, entra no kanban com badge 🤖
+3. **`confirmed`** — humano validou (trust score +2)
+
+**5 thresholds por `extractionType`** (tarefa, decisão, resumo, prioridade, responsável, conteúdo, feedback_teste):
+
+| Score | Nível | Comportamento |
+|-------|-------|---------------|
+| 0-30 | Aprendizagem | Tudo pending |
+| 31-50 | Supervisionado | Confidence >90% passa |
+| 51-70 | Assistente | Confidence >80% passa |
+| 71-90 | Confiável | Confidence >60% passa |
+| 91-100 | Autónomo | Quase tudo auto-executa |
+
+Acções sensíveis (financeiro, delete, comunicação externa, alter role) **capped a 50** — sempre pending.
+
+**Deltas por acção:** `confirmar` +2 · `editar` 0 · `rejeitar` -5 · auto-confirmado seguido de correcção -3.
+
+### 7.2 Chat
+
+- **Modelo:** MiniMax M2.7 via endpoint Anthropic-compatible. API key em `MINIMAX_API_KEY`.
+- **Streaming:** SSE events (`delta`, `tool_call`, `tool_result`, `done`, `error`).
+- **Loop tool use:** máx. 5 tool calls por turno; timeout 60s.
+- **UI:** painel lateral slide-in 420px, botão flutuante bottom-right, dropdown de conversas, render markdown simples.
+- **Permissão:** admin + membro (cliente não vê o botão; curl directo → 403).
+- **Histórico:** DB (MaestroConversation + MaestroMessage). 20 últimas msgs enviadas ao modelo por turno.
+
+### 7.3 Tools (20 handlers em `lib/maestro/tools/`)
+
+Tarefas (7): `criar_tarefa`, `listar_tarefas`, `actualizar_tarefa`, `mudar_estado_tarefa`, `atribuir_responsavel`, `arquivar_tarefa`, `restaurar_tarefa`
+Projectos (3): `listar_projectos`, `obter_projecto`, `actualizar_projecto`
+Pessoas (2): `listar_pessoas`, `obter_pessoa`
+OKRs (2): `listar_objectivos`, `actualizar_kr`
+Outros (6): interacções, alertas, time entries, feedback, content, gemini-vision
+
+Cada tool: `{name, description, inputSchema (Zod), execute(input, ctx)}`. Tools que escrevem (`criar_tarefa`, etc.) passam por `gateAgentWrite({agentId: "maestro-chat", extractionType})` — score decide pending vs executed.
+
+### 7.4 Auto-training
+
+`lib/maestro/auto-training.ts` — regras automáticas: se utilizador ignora auto-confirmed sem corrigir por 3 dias → +0.5. Se corrige logo → -3.
+
+---
+
+## 8. Feedback System (extensão Chrome)
+
+### 8.1 Extensão
+
+- **Versão:** 1.6.0
+- **Pasta:** `extension/`
+- **Manifest V3** — permissions: `storage`, `scripting`, `activeTab`; optional_host_permissions para domínios dinâmicos
+- **Fluxo:**
+  1. Tester faz login no popup → JWT 30d
+  2. Adiciona workspace (URL + projectSlug) → `chrome.permissions.request`
+  3. Background regista content scripts via `chrome.scripting.registerContentScripts`
+  4. Só corre nos workspaces autorizados
+
+### 8.2 Gravação
+
+- **Botão 🎤** — começa/pára gravação (webm + MediaRecorder)
+- **Botão 📷** — screenshot manual (limite 10 por sessão)
+- **Atalho `Alt+S`** — screenshot **sem fechar modais** (crítico para capturar popups/dropdowns)
+- **Eventos capturados** (não captura): password, hidden, autocomplete `cc-*`, ficheiros
+- **Screenshot engine:** `chrome.tabs.captureVisibleTab` (pixels reais, inclui iframes/backdrop blur); fallback html2canvas se API falhar
+- **Persistência offline:** IndexedDB queue; drena ao próximo clique 🎤
+
+### 8.3 Backend (triagem AI)
+
+Pipeline em `lib/feedback-utils.ts` + `lib/feedback-classify.ts` + `lib/gemini-vision.ts`:
+
+1. Recebe voz → Groq (transcrição) → `voiceTranscript`
+2. Recebe screenshot → Gemini Vision → descrição visual
+3. Classifier AI → `{classification: bug|feature|ux|pergunta, priority, module, aiSummary}`
+4. Triage drafter → gera `reproSteps[]`, `expectedResult`, `actualResult`, `acceptanceCriteria`
+5. Humano valida em `/feedback/[id]` → botão **Converter em Task** → cria Task com handoff opcional
+
+### 8.4 Privacidade
+
+- Tokens 30d, sessões encriptadas
+- Dados guardados 90d encriptados
+- Só visíveis à equipa
+- GDPR consent banner no popup da extensão
+
+---
+
+## 9. Handoff Protocol (novo)
+
+**Motivação:** Bruno (produtor externo) precisa receber tasks específicas com contexto completo e reportar resolução sem ter acesso à app.
+
+Docs: `docs/bruno-handoff-protocol.md`, `docs/bruno-starter-kit.md`.
+
+### 9.1 Estados (`Task.handoffStatus`)
+
+`none` → `sent` → `claimed` → `resolved` | `rejected`
+
+### 9.2 Fluxo
+
+1. **Miguel/Maestro:** marca task com handoff → POST `/api/agent/handoffs` → `handoffStatus=sent`, `handoffSentAt=now`
+2. **Bruno agent:** GET `/api/agent/handoffs` (Bearer) → lista pending
+3. **Claim:** PATCH `/api/agent/handoffs/[taskId]/claim` → `handoffStatus=claimed`, `handoffAgentId`, `handoffClaimedAt`
+4. **Bundle:** GET `/api/agent/handoffs/[taskId]/bundle` → JSON com task + assets (screenshots, transcrições, context)
+5. **Asset download:** GET `/api/handoff-asset?url=...` (signed) → download dos media referenciados
+6. **Resolve:** PATCH `/api/agent/handoffs/[taskId]/resolve` com JSON `{resolution: {...}}` → `handoffStatus=resolved`
+7. **Reject:** PATCH `/api/agent/handoffs/[taskId]/reject` — volta para `sent`, fica disponível
+
+### 9.3 Auth
+
+Bearer token dedicado (`HANDOFF_API_SECRET` ou similar) — validado em `lib/handoff-auth.ts`. Separado do `AGENT_API_SECRET` do OpenClaw.
+
+---
+
+## 10. Integrações
+
+| Integração | Cliente | Finalidade |
+|------------|---------|-----------|
+| GitHub | `lib/integrations/github.ts` | PRs, commits, issues, task linking |
+| Gmail | `lib/integrations/` + `/api/sync/gmail` | Ingestão emails → EmailRecord |
+| Google Calendar | `/api/sync/calendar` | Events → Interaction |
+| Google Drive | via OpenClaw | Call recordings (Producer agent) |
+| Discord | `lib/integrations/discord.ts` + webhook | Bot commands + feed |
+| Telegram | `lib/integrations/telegram-bot.ts` | Bot + webhook notifications |
+| WhatsApp | `lib/integrations/whatsapp-bot.ts` | Bot + webhook |
+| Groq | `lib/integrations/groq.ts` | Transcrição Whisper |
+| Gemini | `lib/gemini-vision.ts` | Análise visual de screenshots |
+| MiniMax | `lib/maestro/client.ts` | LLM (chat Maestro) |
+
+---
+
+## 11. Sprints
+
+| Sprint | Estado | Entregável |
+|--------|--------|------------|
+| 1 | fechado | Project + Phase CRUD, soft delete `archivedAt` |
+| 1.5 | fechado | Testes manuais verdes |
+| 2 | fechado | Task kanban @dnd-kit, filtros, badges validação |
+| 3 | fechado | People + Areas CRUD, sidebar role-gated |
+| 4 | fechado | Trust score por categoria + Agent API gating |
+| 5 | fechado | Maestro Chat (MiniMax + 20 tools + SSE) |
+| **Actual** | em curso | Handoff protocol, feedback triage AI, screenshot native API, Gemini Vision |
+
+**Próximas candidatas:**
+- Sprint 6a: Decay automático do trust score por inactividade
+- Sprint 6b: Multi-agente UI (filtros no /maestro)
+- Sprint 6c: Editar/eliminar tarefas via chat (mais tools)
+- Sprint 6d: Briefing automático diário (cron + Maestro gera resumo)
+- Sprint 6e: Pesquisa semântica de conversas antigas
+
+---
+
+## 12. Estrutura de Ficheiros
 
 ```
-command-center/
-├── app/
-│   ├── (app)/                          <- Rotas protegidas (auth gate)
-│   │   ├── page.tsx                    <- Dashboard principal
-│   │   ├── maestro/page.tsx            <- Admin Trust Scores AI
-│   │   ├── objectives/                 <- OKRs (3 vistas: lista, roadmap, mapa)
-│   │   ├── workflows/page.tsx          <- Templates + instancias de workflows
-│   │   ├── content/page.tsx            <- Pipeline de conteudo (Kanban)
-│   │   ├── areas/page.tsx              <- Areas operacionais CRUD
-│   │   ├── people/page.tsx             <- Equipa + contactos CRUD
-│   │   ├── feedback/page.tsx           <- Lista de sessoes de feedback
-│   │   ├── feedback/[id]/              <- Detalhe de sessao (notas voz, AI summary)
-│   │   ├── project/[slug]/page.tsx     <- Detalhe projecto (3 tabs)
-│   │   ├── project/[slug]/client/      <- Client Hub (feed interaccoes)
-│   │   └── api/                        <- API routes protegidas
-│   │       ├── dashboard/route.ts
-│   │       ├── projects/route.ts
-│   │       ├── alerts/route.ts
-│   │       └── objectives/route.ts
-│   ├── (auth)/login/page.tsx           <- Pagina de login
-│   ├── api/                            <- API routes publicas (com auth headers)
-│   │   ├── maestro/chat/route.ts       <- Chat com Maestro
-│   │   ├── maestro/conversations/      <- CRUD conversas
-│   │   ├── feedback/                   <- Endpoints feedback
-│   │   │   ├── auth/login/             <- Auth tester (JWT 30d)
-│   │   │   ├── items/                  <- CRUD feedback items
-│   │   │   ├── sessions/               <- CRUD sessoes
-│   │   │   └── voice-note/             <- Upload audio + transcricao Groq
-│   │   ├── agent/                      <- Endpoints OpenClaw (Bearer token)
-│   │   │   ├── projects/
-│   │   │   ├── tasks/
-│   │   │   ├── objectives/
-│   │   │   ├── key-results/
-│   │   │   ├── content/
-│   │   │   ├── interactions/
-│   │   │   ├── feedback/
-│   │   │   └── alerts/
-│   │   ├── webhooks/
-│   │   │   ├── github/route.ts         <- Push/PR/Issues
-│   │   │   └── discord/route.ts
-│   │   └── sync/
-│   │       ├── github/route.ts         <- Sync completo repo
-│   │       ├── gmail/route.ts
-│   │       └── calendar/route.ts
-│   └── layout.tsx
-│
-├── components/
-│   ├── dashboard/                      <- Cards, stats, alertas, validacao
-│   ├── kanban/                         <- Board, colunas, task cards, filtros
-│   ├── maestro/                        <- Chat panel, trust scores
-│   ├── projects/                       <- Modais e formularios projecto
-│   ├── areas/                          <- Lista e formularios areas
-│   ├── people/                         <- Lista e formularios pessoas
-│   ├── phases/                         <- Lista editavel + modal fases
-│   ├── layout/                         <- Sidebar + Topbar
-│   └── shared/                         <- Modal, ConfirmDialog, FormField
-│
-├── lib/
-│   ├── db.ts                           <- Prisma singleton
-│   ├── types.ts                        <- Interfaces TypeScript
-│   ├── queries.ts                      <- Queries DB (getProjects, getTasks, etc.)
-│   ├── utils.ts                        <- Helpers
-│   ├── auth/                           <- Sessao JWT, login/logout, RBAC
-│   ├── actions/                        <- Server Actions (CRUD completo)
-│   ├── validation/                     <- Schemas Zod (todos os modelos)
-│   ├── maestro/                        <- Sistema AI (prompt, tools, trust)
-│   ├── integrations/                   <- GitHub, Discord, Groq
-│   ├── notifications/                  <- Email, Discord, Telegram, Webhook
-│   ├── feedback-auth.ts               <- JWT testers + legacy agent
-│   ├── feedback-classify.ts           <- Classificacao AI feedback
-│   ├── agent-auth.ts                  <- Bearer token validation
-│   └── agent-helpers.ts               <- Resolve slugs/nomes
-│
-├── prisma/
-│   ├── schema.prisma                   <- 20+ modelos, enums, relacoes
-│   └── seed.ts                         <- Dados iniciais
-│
-├── extension/                          <- Extensao Chrome MV3 (feedback)
-│   ├── manifest.json
-│   ├── background.js
-│   ├── content.js                      <- Captura DOM + voz
-│   ├── popup.js
-│   ├── storage.js
-│   └── queue.js
-│
-├── docs/                               <- Documentacao
-├── public/                             <- Assets estaticos + audio feedback
-├── .env.local                          <- Config live (secrets, API keys)
-└── package.json
+app/
+├── (app)/              ← rotas protegidas (ver §6.1)
+│   ├── page.tsx        ← dashboard
+│   ├── project/[slug]/ ← kanban, timeline, dev, client hub, feedback
+│   ├── maestro/        ← trust score + recent actions
+│   ├── feedback/       ← sessões + triagem
+│   ├── crm/            ← pipeline + campaigns
+│   ├── objectives/     ← 3 vistas
+│   ├── workflows/, content/, areas/, people/, cross-projects/
+│   └── timetracking/, email-sync/, settings/, onboarding/
+├── (auth)/             ← login, forgot, reset, invite
+└── api/                ← ver §6.3
+
+components/
+├── dashboard/, kanban/, maestro/, projects/, phases/, areas/, people/
+├── feedback/, crm/, campaigns/, content/, objectives/, workflows/
+├── layout/ (sidebar + topbar)
+└── shared/ (Modal, ConfirmDialog, FormField)
+
+lib/
+├── db.ts                ← basePrisma + tenantPrisma + getTenantDb
+├── auth/                ← dal.ts (guards), actions, session
+├── actions/             ← Server Actions (CRUD + mutations) + __tests__/
+├── validation/          ← Zod schemas por módulo + __tests__/
+├── maestro/             ← client, trust-rules, score-engine, agent-gating,
+│                          conversation, system-prompt, gateway, auto-training,
+│                          tools/ (20 handlers)
+├── integrations/        ← github, gmail, discord, telegram, whatsapp, groq, bot-queries
+├── notifications/       ← templates/ + types.ts
+├── i18n/                ← locales/{pt-PT,en}.json
+├── export/              ← Excel/PDF helpers
+├── handoff-auth.ts      ← Bearer validation para producer
+├── handoff-route-helpers.ts, handoff-status.ts
+├── feedback-auth.ts     ← tester JWT 30d
+├── feedback-classify.ts, feedback-utils.ts
+├── gemini-vision.ts     ← screenshot analysis
+├── agent-auth.ts, agent-helpers.ts
+├── queries.ts, queries/, types.ts, utils.ts
+├── cors.ts, env.ts, tenant.ts, rate-limit.ts
+└── mock-data.ts (seed)
+
+prisma/
+├── schema.prisma        ← 50+ modelos
+├── migrations/          ← versionadas
+└── seed.ts
+
+extension/               ← Chrome extension v1.6.0
+├── manifest.json        ← MV3
+├── background.js        ← service worker + captureVisibleTab handler
+├── content.js           ← content script (recording + Alt+S)
+├── popup.html/.js
+├── queue.js             ← IndexedDB offline queue
+├── storage.js
+├── html2canvas.min.js   ← fallback engine
+├── styles.css
+└── icons/
+
+public/
+├── feedback-screenshots/  ← storage local (move para S3 quando crescer)
+└── ...
+
+docs/
+├── SPECS-CURRENT-STATE.md      ← este doc
+├── command-center-spec-v1.2.md ← histórico
+├── command-center-saas-spec-v2.0.md ← spec SaaS detalhado
+├── command-center-specs.md
+├── bruno-handoff-protocol.md   ← protocolo producer externo
+├── bruno-starter-kit.md        ← onboarding Bruno
+├── addendum-github-v1.0.md
+├── feedback-tester-setup.md
+├── manual-command-center.md / -v2.md
+├── guia-operacional-completo.md
+├── getting-started-pt.md
+└── setup-database-bruno.md
+
+tasks/
+├── todo.md              ← sprint tracker
+└── lessons.md           ← lições aprendidas
 ```
 
 ---
 
-## 4. Base de Dados — Modelos (20+)
-
-### Autenticacao e Utilizadores
-
-**User**
-- Campos: id, email, passwordHash, name, role, personId, createdAt
-- Roles: `admin` (acesso total), `membro` (escrita), `cliente` (leitura do seu projecto)
-
-**UserProjectAccess**
-- Relacao many-to-many entre User e Project
-
-### Projectos e Operacoes
-
-**Project**
-- Campos: id, name, slug (auto-gerado), type (interno/cliente), status (ativo/pausado/concluido), health (green/yellow/red), progress (0-100), description, color (#hex), archivedAt
-- Relacoes: phases, tasks, areas, client, githubRepos, contentItems, feedbackSessions
-
-**ProjectPhase**
-- Campos: id, projectId, name, description, phaseOrder, status (pendente/em_curso/concluida), progress, startDate, endDate
-
-**Area**
-- Campos: id, name, description, ownerId (Person), archivedAt
-- Agrupamento cross-projecto
-
-### Tarefas e Workflow
-
-**Task** (entidade central, 20+ campos)
-- Identificacao: id, title, description, projectId, phaseId, areaId
-- Workflow: status (backlog/a_fazer/em_curso/em_revisao/feito), priority (critica/alta/media/baixa), kanbanOrder
-- Atribuicao: assigneeId, validatedById
-- Datas: deadline, completedAt, createdAt, updatedAt
-- Origem: origin (manual/ai/agent/github/email/call)
-- Validacao AI: validationStatus (por_confirmar/auto_confirmado/confirmed/edited/rejected), aiConfidence, originalData
-- GitHub: devStatus (sem_codigo/em_desenvolvimento/em_review/merged/deployed), branch, prNumber, prStatus, prUrl, lastCommitAt
-
-**WorkflowTemplate** — Definicoes reutilizaveis (manual ou trigger)
-**WorkflowTemplateStep** — Passos com dependencias, prazos, assignees
-**WorkflowInstance** — Execucao activa de workflow
-**WorkflowInstanceTask** — Tarefas criadas a partir de steps
-
-### OKRs e Objectivos
-
-**Objective**
-- Campos: id, title, description, projectId, targetValue, currentValue, unit, deadline, status
-- Relacoes: keyResults, snapshots
-
-**KeyResult**
-- Campos: id, objectiveId, title, weight, order, targetValue, currentValue, unit
-
-**OkrSnapshot**
-- Tracking historico (valor numa data)
-
-### Pessoas e Contactos
-
-**Person**
-- Campos: id, name, email, role, type, avatarColor, githubUsername, archivedAt
-- Relacoes: tasks assigned, tasks validated, areas owned, content approved
-
-**ClientContact**
-- Liga clientes a pessoas (isPrimary flag)
-
-### Clientes e Interaccoes
-
-**Client**
-- Campos: id, projectId, companyName, status, lastInteractionAt, daysSinceContact, notes
-
-**Interaction**
-- Campos: id, clientId, type, title, body, source, participants, createdAt
-- AI: validationStatus, aiConfidence, originalData
-
-### Pipeline de Conteudo
-
-**ContentItem**
-- Campos: id, projectId, title, format, status (proposta/in_progress/approved/published)
-- Pipeline: sourceCallDate -> scriptPath -> videoPath -> approvedAt -> publishedAt -> approvedById
-- AI: validationStatus, aiConfidence, originalData
-
-### Integracao GitHub
-
-**GithubRepo**
-- Campos: id, projectId, fullName, defaultBranch, webhookSecret, lastSyncAt
-
-**GithubEvent**
-- Campos: id, repoId, eventType (commit/pr/issue), author, authorPersonId, rawPayload
-- Task linking: taskId, taskLinkMethod (explicit/implicit), taskLinkConfidence
-
-**DevMetricsDaily**
-- Agregados diarios: commits, PRs opened/merged/closed, issues, lines added/removed, deploys, active contributors
-
-### Sistema Maestro AI
-
-**MaestroConversation** — Sessoes chat por user
-**MaestroMessage** — Mensagens (role, content, toolCalls, toolResults)
-**MaestroAction** — Audit log (agentId, extractionType, action, entity, scoreDelta)
-**TrustScore** — Por agente, por tipo de extracao (confirmations, edits, rejections)
-
-### Feedback (Extensao Chrome)
-
-**FeedbackSession**
-- Campos: id, projectId, testerName, testerId, startUrl, pagesVisited, duration, aiSummary, aiClassification, status
-
-**FeedbackItem**
-- Campos: id, sessionId, type, classification, module, priority, pageUrl, pageTitle, voiceAudioUrl, voiceTranscript, aiSummary, contextSnapshot, status (pending/reviewed), taskId, reviewedById
-
-### Alertas e Logs
-
-**Alert**
-- Campos: id, type (tarefa_atrasada/cliente_sem_contacto/etc.), severity, message, relatedTaskId/ProjectId/ClientId
-
-**SyncLog**
-- Campos: id, source, action, status, itemsProcessed, errorMessage, durationMs
-
----
-
-## 5. Paginas e Rotas (Frontend)
-
-### Rotas Protegidas (dentro de `(app)/`)
-
-| Rota | Descricao |
-|------|-----------|
-| `/` | **Dashboard** — Stats, cards de projectos, barra de objectivos, satellites de dados, painel de validacao, alertas |
-| `/project/[slug]` | **Detalhe Projecto** — 3 tabs: Kanban (tarefas), Timeline, Dev (GitHub). Filtros por status, prioridade, assignee |
-| `/project/[slug]/client` | **Client Hub** — Feed de interaccoes read-only para role `cliente` |
-| `/maestro` | **Admin Trust Scores** — Scores por tipo de extracao, accoes recentes do Maestro |
-| `/objectives` | **Estrategia/OKRs** — 3 vistas: lista OKR, roadmap temporal, mapa canvas |
-| `/workflows` | **Workflows** — CRUD templates + instancias activas |
-| `/content` | **Pipeline Conteudo** — Kanban por status (proposta -> approved -> published) |
-| `/areas` | **Areas Operacionais** — CRUD areas, atribuir owners |
-| `/people` | **Equipa** — CRUD pessoas/contactos, gerir roles |
-| `/feedback` | **Sessoes Feedback** — Lista sessoes de teste, gravacoes voz, classificacoes AI |
-| `/feedback/[id]` | **Detalhe Sessao** — Timeline de items, audio, transcricoes, AI summary |
-
-### Rota Publica
-
-| Rota | Descricao |
-|------|-----------|
-| `/(auth)/login` | Formulario login (email + password) |
-
----
-
-## 6. API Endpoints
-
-### Maestro (Chat AI)
-
-| Metodo | Rota | Auth | Descricao |
-|--------|------|------|-----------|
-| POST | `/api/maestro/chat` | Writer+ | Enviar mensagem, executar tools |
-| GET | `/api/maestro/conversations` | Writer+ | Listar conversas do user |
-| GET/POST/DELETE | `/api/maestro/conversations/[id]` | Writer+ | CRUD conversa |
-
-### Feedback
-
-| Metodo | Rota | Auth | Descricao |
-|--------|------|------|-----------|
-| POST | `/api/feedback/auth/login` | Publico | Login tester (JWT 30d) |
-| GET/POST | `/api/feedback/sessions` | Tester/Agent | CRUD sessoes |
-| GET | `/api/feedback/sessions/[id]` | Tester/Agent | Detalhe sessao |
-| GET/POST | `/api/feedback/items` | Tester/Agent | CRUD items |
-| GET/PATCH/DELETE | `/api/feedback/items/[id]` | Agent | Item CRUD |
-| POST | `/api/feedback/items/[id]/to-task` | Tester/Agent | Converter feedback em tarefa |
-| POST | `/api/feedback/voice-note` | Tester/Agent | Upload audio + transcricao Groq |
-
-### Agent (OpenClaw) — Bearer Token
-
-| Metodo | Rota | Descricao |
-|--------|------|-----------|
-| GET | `/api/agent/projects` | Listar projectos (filtro: status, slug) |
-| GET/POST | `/api/agent/tasks` | Listar/criar tarefas |
-| GET | `/api/agent/tasks/[id]` | Detalhe tarefa |
-| GET/POST | `/api/agent/objectives` | Listar/criar OKRs |
-| GET/PATCH | `/api/agent/objectives/[id]` | OKR detalhe + update |
-| GET/PATCH | `/api/agent/key-results/[id]` | KR detalhe + update |
-| GET/POST | `/api/agent/content` | CRUD content items |
-| GET/PATCH | `/api/agent/content/[id]` | Content item detalhe |
-| POST | `/api/agent/interactions` | Criar interaccoes (client hub feed) |
-| GET/POST | `/api/agent/feedback/sessions` | CRUD sessoes feedback |
-| GET | `/api/agent/feedback/items` | Listar feedback items |
-| GET/POST | `/api/agent/alerts` | Listar/criar alertas |
-
-### Webhooks (entrada)
-
-| Rota | Fonte | Eventos |
-|------|-------|---------|
-| `/api/webhooks/github` | GitHub | push, pull_request, issues |
-| `/api/webhooks/discord` | Discord | Mensagens |
-
-### Sync (polling)
-
-| Rota | Descricao |
-|------|-----------|
-| `/api/sync/github` | Sync completo repo (commits, PRs, issues) |
-| `/api/sync/gmail` | Polling emails |
-| `/api/sync/calendar` | Polling calendario |
-
----
-
-## 7. Sistema Maestro AI
-
-### Componentes
-
-**System Prompt** — Portugues PT-PT, tom directo, sem fluff
-- 4 tools disponiveis: listar projectos, listar tarefas, listar pessoas, criar tarefa
-- Usa sempre tools (sem alucinacao), confirma accoes sensiveis
-- Nunca menciona outros agentes (Producer, Writer, Publisher)
-
-**Tools do Maestro:**
-1. `listar_projectos` — Lista projectos activos com contagem de tarefas por status
-2. `listar_tarefas` — Lista tarefas com filtros (slug, status, assignee, origin, limit)
-3. `listar_pessoas` — Lista pessoas nao-arquivadas (internas + clientes)
-4. `criar_tarefa` — Cria tarefa com gating opcional (auto-confirm se confianca >80%)
-
-### Sistema Trust Score
-
-**7 tipos de extracao:**
-- `tarefa`, `decisao`, `resumo`, `prioridade`, `responsavel`, `conteudo`, `ligacao_codigo`
-
-**5 estados de validacao:**
-1. `por_confirmar` — AI extraiu, humano deve validar (badge "Por validar")
-2. `auto_confirmado` — Confianca >80%, auto-admitido (badge "Bot")
-3. `confirmed` — Humano validou (trust score sobe)
-4. `edited` — Humano modificou (score sobe menos)
-5. `rejected` — Humano rejeitou (score desce)
-
-**5 niveis de trust:**
-| Nivel | Score | Descricao |
-|-------|-------|-----------|
-| Aprendizagem | 0-30 | Agente novo a aprender |
-| Calibracao | 31-50 | Ainda a calibrar |
-| Confianca | 51-70 | Confiavel |
-| Autonomia | 71-90 | Alta autonomia |
-| Pleno | 91-100 | Autonomia total |
-
-**Cap de accoes sensiveis:** Decisoes financeiras, arquivo de projecto/pessoa, comunicacao externa, alteracoes auth — capped a score 50 independente do historico.
-
-**Formula score:** `newScore = Math.round((totalConfirmations * 3 - totalRejections) / totalInteractions * 100)`
-
-### Fluxo Chat
-1. User envia mensagem -> POST `/api/maestro/chat`
-2. Verificacao auth (Writer+ obrigatorio)
-3. Carregar/criar conversa do user
-4. Construir historico de mensagens da DB
-5. Chamar Anthropic API com system prompt + tools
-6. Executar tool calls, recolher resultados
-7. Se Claude chamou tools, append resultados e re-invocar (loop agentico)
-8. Persistir turno final (mensagem user + resposta assistant + tool calls/results)
-9. Devolver ao cliente
-
-### Persistencia
-- `MaestroConversation` por user (titulo + flag archived)
-- `MaestroMessage` por turno (role, content, toolCalls JSON, toolResults JSON)
-- Max 100 mensagens recentes por conversa (para context window)
-
----
-
-## 8. Integracao GitHub
-
-### Webhook Receiver
-- Verificacao HMAC signature
-- Eventos: push (commits), pull_request (open/close/sync), issues (open/close/labeled)
-
-### Processamento
-- **Author Mapping:** GitHub username -> Person.githubUsername
-- **Task Linking:**
-  - Explicito: referencias `CC-##` (lookup kanban position)
-  - Implicito: branch name keyword matching contra titulos de tarefas (fuzzy, confidence score)
-  - Armazena: taskId, taskLinkMethod, taskLinkConfidence
-- **Event Storage:** Payload raw completo em GithubEvent.rawPayload (JSON)
-
-### Dev Metrics (DevMetricsDaily)
-- Agregados diarios: commits, PRs opened/merged/closed, issues, lines +/-, deploys, contributors activos
-- Indexado por repo + data
-
-### Task Dev Status (5 estados)
-`sem_codigo` -> `em_desenvolvimento` -> `em_review` -> `merged` -> `deployed`
-
----
-
-## 9. Sistema de Feedback (Extensao Chrome + Web)
-
-### Extensao Chrome MV3
-- **popup.js** — UI (adicionar workspace, start/stop gravacao)
-- **background.js** — Service worker (gestao sessoes)
-- **content.js** — Injeccao na pagina, captura: notas voz (MediaRecorder -> WAV/WebM), DOM snapshots, URL + titulo, eventos navegacao
-- **storage.js** — Chrome storage wrapper
-- **queue.js** — Batch de eventos, sync para backend
-
-### Fluxo
-1. Tester adiciona URL workspace no popup
-2. Extensao pede `chrome.permissions.request` para esse origin
-3. Regista content script via `chrome.scripting.registerContentScripts`
-4. User grava notas voz, extensao captura DOM events
-5. Ao parar: POST `/api/feedback/sessions`
-6. Upload audio individual para `/api/feedback/voice-note` -> Groq transcreve
-7. Backend classifica feedback (type: bug/feature/ui/performance)
-8. Gera AI summary
-9. Marca sessao pronta para review
-
-### Review Admin
-- `/feedback` lista sessoes
-- `/feedback/[id]` mostra timeline com audio playback, transcricoes, classificacoes AI, links para tarefas criadas
-- Accoes: marcar reviewed, converter em tarefa, atribuir a modulo
-
----
-
-## 10. Autenticacao e Autorizacao
-
-### Sessoes
-- JWT via **jose** (encode/decode)
-- Cookie httpOnly (7 dias expiry)
-- Payload: `{ userId, personId, email, name, role }`
-
-### Login
-1. POST form (email, password)
-2. Find User by email
-3. Verificar password com bcryptjs
-4. Criar JWT
-5. Set cookie httpOnly
-6. Redirect para `/`
-
-### Roles (RBAC)
-| Role | Permissoes |
-|------|-----------|
-| `admin` | Acesso total (todos projectos, criar projectos, gerir pessoas, dashboard admin) |
-| `membro` | Escrita/edicao (criar tarefas, update status, validar, CRUD conteudo) — visibilidade limitada a projectos atribuidos |
-| `cliente` | Leitura apenas — so ve o Client Hub do seu projecto |
-
-### Guards
-- `requireAdmin()` — so admin
-- `requireWriter()` — admin OU membro
-- `requireNonClient()` — admin OU membro (redirect se cliente)
-- `requireAdminPage()` — admin only (redirect pagina)
-
-### Auth Agent API
-- Header `Authorization: Bearer {token}` contra `AGENT_API_SECRET`
-- 401 se invalido
-
-### Auth Tester (Feedback)
-- JWT em cookies (da extensao) OU fallback para `AGENT_API_SECRET`
-
----
-
-## 11. Validacao (Zod Schemas)
-
-Todos os modelos usam schemas Zod com enums tipados:
-
-### Task
-- Status: `backlog | a_fazer | em_curso | em_revisao | feito`
-- Priority: `critica | alta | media | baixa`
-- Validation: `por_confirmar | auto_confirmado | confirmed | edited | rejected`
-- Create: title (obrigatorio), description, projectId, phaseId, areaId, assigneeId, status, priority, deadline (YYYY-MM-DD), origin
-- Move: toStatus (enum) + toIndex (integer para reordenar kanban)
-
-### Project
-- Type: `interno | cliente`
-- Status: `ativo | pausado | concluido`
-- Health: `green | yellow | red`
-- Create: name (obrigatorio), slug (auto via `slugify()`), type (obrigatorio), description, color (#hex)
-
-### Phase
-- Status: `pendente | em_curso | concluida`
-- Progress: 0-100
-- Validacao: endDate >= startDate
-
-### Helpers
-- `emptyToNull()` — converte strings vazias de formularios para null
-- `firstZodError()` — extrai primeira mensagem de erro do ZodError
-- Mensagens de erro em portugues
-
----
-
-## 12. Server Actions — Padrao
-
-```typescript
-export async function actionName(
-  prev: ActionResult<T> | undefined,
-  formData: FormData
-): Promise<ActionResult<T>> {
-  // 1. Auth check
-  const auth = await requireAdmin(); // ou requireWriter()
-  if (!auth.ok) return { error: auth.error };
-
-  // 2. Validar com Zod
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) return { error: firstZodError(parsed.error) };
-
-  // 3. Operacao DB
-  const result = await prisma.model.create({ data });
-
-  // 4. Invalidar cache
-  revalidatePath("/path");
-
-  // 5. Retornar sucesso
-  return { success: true, data: result };
-}
-```
-
-### Actions Implementadas
-
-| Modulo | Actions |
-|--------|---------|
-| Projects | createProject, updateProject, archiveProject |
-| Phases | createPhase, updatePhase, deletePhase |
-| Tasks | createTask, updateTask, moveTask, updateTaskDevStatus, completeTask, archiveTask |
-| Validacao | confirmTask, editTask, rejectTask, confirmInteraction, confirmContentItem |
-| Areas | createArea, updateArea, archiveArea |
-| People | createPerson, updatePerson, archivePerson |
-| Content | createContentItem, updateContentItem, archiveContentItem |
-| Interactions | createInteraction, validateInteraction |
-| Feedback | convertFeedbackToTask, markFeedbackReviewed |
-| OKRs | Server actions em okr-actions.ts |
-
----
-
-## 13. UI/UX
-
-### Layout
-- **Sidebar** (colapsavel): Dashboard, Projectos, Estrategia, Workflows, Conteudo, Areas, Equipa, Feedback
-- **Topbar**: Perfil user, logo, placeholder pesquisa
-- **Modais**: Wrapper custom sobre `<dialog>` nativo
-
-### Componentes Principais
-
-| Componente | Descricao |
-|-----------|-----------|
-| ProjectCard | Nome, badge saude, barra progresso, contagem tarefas, menu accoes |
-| KanbanBoard | 5 colunas por status, drag-drop dnd-kit |
-| TaskCard | Titulo, badge prioridade, avatar assignee, deadline, origem, accoes |
-| ObjectivesBar | Lista horizontal objectivos activos com progresso |
-| SatelliteCard | Widget fonte de dados (calls, content, Discord, calendar, GitHub) com contagem |
-| AlertsPanel | Lista alertas recentes com cor por severity |
-| ValidationPanel | Fila de validacoes AI pendentes (confirm/edit/reject) |
-| TrustScoreCard | Score, contagem confirmations/edits/rejections |
-| MaestroPanel | Interface chat (sidebar), message bubbles, resultados tool calls |
-
-### Design
-- **Tailwind CSS 4** utility-first
-- **CSS variables custom** (--green, --yellow, --red, --accent, --muted)
-- **Sem component library** — tudo custom (Modal, FormField, ConfirmDialog)
-- **Responsivo**: Grid auto-fit, flex
-
----
-
-## 14. Integracoes Externas
-
-| Servico | Uso | Config |
-|---------|-----|--------|
-| MiniMax | LLM Maestro (endpoint compativel Anthropic) | `MINIMAX_API_KEY`, `https://api.minimax.io/anthropic`, modelo M2.7-highspeed |
-| Groq | Transcricao audio (Whisper) | `GROQ_API_KEY` |
-| GitHub | Webhooks + API polling (push/PR/issues) | `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET` |
-| Discord | Notificacoes via webhook | `DISCORD_WEBHOOK_SECRET` |
-| PostgreSQL 16 | Base de dados principal | `DATABASE_URL`, Prisma PG adapter |
-| Nodemailer | Notificacoes email | Config em `lib/notifications/channels/email.ts` |
-| OpenClaw | Agent API (Bearer token) | `AGENT_API_SECRET` |
-
----
-
-## 15. Notificacoes
-
-4 canais configurados:
-1. **Email** (Nodemailer/SMTP)
-2. **Discord** (webhook)
-3. **Telegram** (API)
-4. **Webhook** (generico)
-
-Template existente: `feedback-bug.ts` — email para bugs de feedback
-
----
-
-## 16. Testes
-
-- **Framework:** Vitest 4.1.3
-- **Testing Library:** @testing-library/react 16.3.2
-- **Localizacao:** pastas `__tests__/` dentro de `lib/actions/`, `lib/validation/`, `lib/maestro/`
-- **Comandos:** `pnpm test` (once), `pnpm test:watch` (watch)
-
----
-
-## 17. Comandos de Desenvolvimento
+## 13. Comandos
 
 ```bash
-pnpm dev                     # Dev server (porto 3100)
-pnpm build                   # Build producao
-pnpm start                   # Run build producao
-pnpm lint                    # ESLint
-pnpm test                    # Vitest (once)
-pnpm test:watch              # Vitest (watch)
-pnpm prisma db push          # Aplicar schema (sem migrations)
-pnpm prisma db seed           # Seed dados iniciais
-pnpm prisma generate          # Regenerar tipos Prisma
-pnpm exec tsc --noEmit        # Type check
+# Dev
+pnpm dev                    # http://localhost:3100 (0.0.0.0 para LAN)
+pnpm build                  # production build
+pnpm start                  # production server
+pnpm lint                   # ESLint
+
+# Testes
+pnpm test                   # Vitest run
+pnpm test:watch             # watch mode
+
+# Prisma
+pnpm prisma migrate dev --name <nome>   # cria + aplica migration (dev)
+pnpm prisma migrate deploy              # aplica pending (prod/CI)
+pnpm prisma migrate status              # estado
+pnpm prisma db seed                     # seed.ts (dados iniciais)
+pnpm prisma generate                    # regenerar client
+
+# Tipagem
+pnpm exec tsc --noEmit                  # type check sem emitir
+
+# Testers
+pnpm tsx scripts/create-tester.ts <email> <name>   # cria tester + JWT
+
+# Utilitários
+pnpm tsx prisma/backfill-kanban-order.ts  # backfill one-shot (idempotente)
 ```
 
 ---
 
-## 18. Estado Actual
+## 14. Variáveis de Ambiente (`.env.local`)
 
-### Completo e Funcional
-- Dashboard com cards, stats, satellites, alertas, validacao
-- Kanban por projecto (drag-drop 5 status)
-- CRUD completo: tarefas, projectos, fases, areas, pessoas, conteudo, interaccoes
-- OKRs com 3 vistas (lista, roadmap, mapa canvas)
-- Workflows templates + instancias
-- Maestro AI com 4 tools + trust scores
-- GitHub webhooks + sync + task linking + dev metrics
-- Feedback system (extensao Chrome + voz + transcricao + AI classification)
-- Feedback-to-task conversion
-- Sistema de alertas
-- Painel de validacao humana (confirm/edit/reject)
-- Trust score engine (Bayesian per extraction type)
-- Soft deletes via archivedAt
-- RBAC (admin, membro, cliente)
-- Auth JWT 7 dias httpOnly
-- Agent API para OpenClaw
-- Notificacoes (Discord, email, webhook)
+**Obrigatórias:**
+- `DATABASE_URL` — postgres connection string
+- `AUTH_SECRET` — JWT signing secret
+- `AGENT_API_SECRET` — Bearer para OpenClaw agents
+- `MINIMAX_API_KEY`, `MINIMAX_BASE_URL`, `MINIMAX_MODEL` — LLM do Maestro
+- `GROQ_API_KEY` — transcrição de voz
 
-### Parcialmente Implementado
-- Gmail/Calendar sync — endpoints existem, podem precisar de polishing
-- Timeline view no ProjectView — estrutura presente
-- GitHub task linking — alguns edge cases
-- Classificacao AI de feedback — integracao modelo precisa validacao
+**Opcionais conforme módulos:**
+- `GEMINI_API_KEY` — screenshot analysis
+- `HANDOFF_API_SECRET` — producer Bruno
+- `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` — integração GitHub
+- `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` — Gmail sync
+- `DISCORD_BOT_TOKEN`, `TELEGRAM_BOT_TOKEN`, `WHATSAPP_API_KEY`
 
-### Nao Implementado (Oportunidades)
-- WebSocket real-time (actualmente so polling)
-- Operacoes batch (bulk status changes)
-- Vistas avancadas de reporting/analytics
-- Multi-lingua (hardcoded PT-PT)
-- Templates notificacao customizaveis por user
-- Optimizacoes performance para 10k+ tarefas
-- Mobile responsive refinado
-- Dark mode
-- Audit trail completo (quem fez o que, quando)
-- Integracoes adicionais (Slack, Linear, Notion)
-- Dashboard customizavel (widgets drag-drop)
-- Exportacao dados (CSV, PDF)
+**Dev-only:**
+- `NEXT_PUBLIC_APP_URL` — canonical URL para links em emails
 
 ---
 
-## 19. Documentacao Existente
+## 15. Padrões de Código
 
-| Ficheiro | Conteudo |
-|----------|---------|
-| `docs/command-center-spec-v1.2.md` | Spec funcional completa (1952 linhas) |
-| `docs/manual-command-center.md` | Manual do utilizador |
-| `docs/setup-database-bruno.md` | Setup PostgreSQL + seeding |
-| `docs/feedback-tester-setup.md` | Setup ambiente testers |
-| `docs/addendum-github-v1.0.md` | Spec detalhada integracao GitHub |
-| `CLAUDE.md` | Guia desenvolvimento (convencoes, stack, setup) |
-| `AGENTS.md` | Notas integracao agentes |
+### 15.1 Server Actions
+- Assinatura: `async function actionName(prev: ActionResult | undefined, formData: FormData): Promise<ActionResult<T>>`
+- Auth: `requireAdmin()` ou `requireWriter()` no início
+- Validar com Zod antes de ir ao Prisma
+- Tratar `P2002` (unique duplicado) com mensagem amigável
+- `revalidatePath()` no fim
+- Retorno: `{success: true, data}` ou `{error: "msg"}`
+- Forms: `useActionState()` hook
+
+### 15.2 Server vs Client Components
+- Server por defeito (async/await direct)
+- `"use client"` só para interactividade (modais, drag-drop, forms com state)
+
+### 15.3 Queries
+- Soft delete: filtrar `archivedAt: null` via helper `NOT_ARCHIVED`, `NOT_ARCHIVED_TASK`, `NOT_ARCHIVED_FEEDBACK_ITEM`
+- Sempre via `getTenantDb()` — nunca `basePrisma` em dados de negócio
+- Joins explícitos via `include`, não N+1
+
+### 15.4 Validação
+- Zod schemas em `lib/validation/<module>-schema.ts`
+- Enums: `TaskStatus`, `Priority`, `ValidationStatus` (por_confirmar/auto_confirmado/confirmed/edited/rejected), `HandoffStatus`
+- Helper `firstZodError()` para mensagens user-friendly
+
+### 15.5 Testes
+- Vitest + mocks de Prisma (sem DB de teste por enquanto)
+- Convenção: `__tests__/` dentro da pasta do código testado
+- ~100+ testes actuais; continuar a crescer em actions e validation
+
+### 15.6 i18n
+- Server: `createTranslator(locale)` → `t("chave")`
+- Client: `useT()` hook (requer `<I18nProvider>` no layout)
+- Locale resolvido por tenant (`getTenantLocale()`)
+
+---
+
+## 16. Notas operacionais
+
+- **Porto dev:** 3100 (não 3000 por convenção)
+- **DB container:** `command-center-postgres` (docker, postgres:16-alpine)
+- **Cross-origin dev:** `allowedDevOrigins: ["91.99.211.238"]` em `next.config.ts` (dev server acedido remotamente)
+- **Dev server no servidor:** `nohup pnpm dev --port 3100 --hostname 0.0.0.0 > server.log 2>&1 &`
+- **Credenciais dev:**
+  - admin: `miguel@example.com` / `commandcenter2026`
+  - membro: `membro@example.com` / `commandcenter2026`
+  - cliente: `sergio.goncalves@fiscomelres.pt` / `commandcenter2026`
+
+---
+
+## 17. Riscos conhecidos / dívida técnica
+
+- **Screenshots em `public/feedback-screenshots/`** — não é escalável (volume crescente). Migrar para S3/R2 antes de abrir a outros tenants.
+- **Prisma client em dev** — alterações ao schema exigem `prisma generate` + restart do dev server (cache).
+- **MiniMax tool use quirks** — endpoint é Anthropic-compatible mas há quirks ocasionais; smoke test `scripts/test-minimax.ts` deve correr após upgrades do SDK.
+- **Loop tool calls** — limite 5/turno previne runaway; se atingir, injecta mensagem no texto final.
+- **Auth tokens** — JWTs sem rotation/blacklist; logout invalida só o cookie. Aceitável para escala actual.
+- **FeedbackSession events** — `eventsJson` é JSON crescente sem paginação; sessões longas podem ficar >1 MB.
+- **i18n strings client-side** — enviadas no bundle inteiro; refactor para dynamic import por rota quando crescer.
+
+---
+
+_Última revisão manual: 2026-04-21._
+_Mantém este doc actualizado a cada mudança estrutural (nova tabela, rota pública, integração, sprint fechado)._
