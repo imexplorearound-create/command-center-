@@ -62,6 +62,8 @@ model Tenant {
   emailTemplates         EmailTemplate[]
   campaignRecipients     CampaignRecipient[]
   llmConfig              TenantLLMConfig?
+  crewRoles              CrewRole[]
+  executors              Executor[]
 
   @@map("tenants")
 }
@@ -326,6 +328,7 @@ model Person {
   emailRecords            EmailRecord[]         @relation("EmailPerson")
   campaignsCreated        EmailCampaign[]       @relation("CampaignCreator")
   campaignRecipients      CampaignRecipient[]   @relation("CampaignRecipientPerson")
+  executorAsHuman         Executor[]            @relation("ExecutorHuman")
 
   @@index([tenantId])
   @@index([archivedAt], map: "idx_people_archived")
@@ -380,6 +383,7 @@ model Task {
   // Handoff para produtor externo (Bruno etc.)
   handoffStatus     String?   @map("handoff_status") @db.VarChar(20)
   handoffAgentId    String?   @map("handoff_agent_id") @db.VarChar(100)
+  handoffExecutorId String?   @map("handoff_executor_id") @db.Uuid
   handoffSentAt     DateTime? @map("handoff_sent_at") @db.Timestamptz
   handoffClaimedAt  DateTime? @map("handoff_claimed_at") @db.Timestamptz
   handoffResolvedAt DateTime? @map("handoff_resolved_at") @db.Timestamptz
@@ -393,6 +397,7 @@ model Task {
   validator Person?       @relation("TaskValidator", fields: [validatedById], references: [id])
   keyResult KeyResult?    @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
   alerts    Alert[]       @relation("AlertTask")
+  handoffExecutor Executor? @relation("TaskHandoffExecutor", fields: [handoffExecutorId], references: [id])
 
   workflowInstanceTasks WorkflowInstanceTask[]
   githubEvents          GithubEvent[]
@@ -554,6 +559,7 @@ model TrustScore {
   id                 String    @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
   agentId            String    @default("maestro-internal") @map("agent_id") @db.VarChar(100)
+  executorId         String?   @map("executor_id") @db.Uuid
   extractionType     String    @map("extraction_type") @db.VarChar(100)
   score              Int       @default(0)
   totalConfirmations Int       @default(0) @map("total_confirmations")
@@ -563,11 +569,13 @@ model TrustScore {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  executor Executor? @relation("TrustScoreExecutor", fields: [executorId], references: [id])
 
   @@unique([tenantId, agentId, extractionType], map: "trust_scores_tenant_agent_type_unique")
   @@index([tenantId])
   @@index([agentId], map: "idx_trust_scores_agent")
+  @@index([executorId, extractionType], map: "idx_trust_scores_executor_type")
   @@map("trust_scores")
 }
 
@@ -577,6 +585,8 @@ model MaestroAction {
   id             String   @id @default(uuid()) @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
   agentId        String   @map("agent_id") @db.VarChar(100)
+  crewRoleId     String?  @map("crew_role_id") @db.Uuid
+  executorId     String?  @map("executor_id") @db.Uuid
   extractionType String   @map("extraction_type") @db.VarChar(100)
   action         String   @db.VarChar(20)
   entityType     String   @map("entity_type") @db.VarChar(50)
@@ -587,13 +597,73 @@ model MaestroAction {
   performedById  String?  @map("performed_by") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
-  performedBy Person? @relation("MaestroActionPerformedBy", fields: [performedById], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  performedBy Person?   @relation("MaestroActionPerformedBy", fields: [performedById], references: [id])
+  crewRole    CrewRole? @relation("MaestroActionCrewRole", fields: [crewRoleId], references: [id])
+  executor    Executor? @relation("MaestroActionExecutor", fields: [executorId], references: [id])
 
   @@index([tenantId])
   @@index([agentId, extractionType], map: "idx_maestro_actions_agent_type")
   @@index([createdAt(sort: Desc)], map: "idx_maestro_actions_date")
+  @@index([executorId, createdAt(sort: Desc)], map: "idx_maestro_actions_executor")
+  @@index([crewRoleId, createdAt(sort: Desc)], map: "idx_maestro_actions_crew_role")
   @@map("maestro_actions")
+}
+
+// ─── Crew (CrewRole + Executor) ─────────────────────────────
+
+model CrewRole {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  slug        String   @db.VarChar(50)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(300)
+  color       String   @db.VarChar(7)
+  glyphKey    String   @map("glyph_key") @db.VarChar(50)
+  order       Int      @default(0) @map("display_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  executors      Executor[]
+  maestroActions MaestroAction[] @relation("MaestroActionCrewRole")
+  feedbackItems  FeedbackItem[]  @relation("FeedbackItemCrewRole")
+  opportunities  Opportunity[]   @relation("OpportunityCrewRole")
+
+  @@unique([tenantId, slug], map: "crew_roles_tenant_slug_unique")
+  @@index([tenantId])
+  @@map("crew_roles")
+}
+
+model Executor {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  crewRoleId   String    @map("crew_role_id") @db.Uuid
+  kind         String    @db.VarChar(20)
+  name         String    @db.VarChar(200)
+  note         String?   @db.VarChar(500)
+  isPrimary    Boolean   @default(false) @map("is_primary")
+  personId     String?   @map("person_id") @db.Uuid
+  apiClientId  String?   @map("api_client_id") @db.VarChar(100)
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  crewRole CrewRole @relation(fields: [crewRoleId], references: [id], onDelete: Cascade)
+  person   Person?  @relation("ExecutorHuman", fields: [personId], references: [id])
+
+  trustScores           TrustScore[]          @relation("TrustScoreExecutor")
+  maestroActions        MaestroAction[]       @relation("MaestroActionExecutor")
+  feedbackItems         FeedbackItem[]        @relation("FeedbackItemExecutor")
+  tasksAsHandoff        Task[]                @relation("TaskHandoffExecutor")
+  opportunities         Opportunity[]         @relation("OpportunityExecutor")
+  opportunityActivities OpportunityActivity[] @relation("ActivityExecutor")
+
+  @@unique([tenantId, apiClientId], map: "executors_tenant_api_client_unique")
+  @@index([tenantId])
+  @@index([crewRoleId], map: "idx_executors_crew_role")
+  @@map("executors")
 }
 
 // ─── Maestro Chat ───────────────────────────────────────────
@@ -958,11 +1028,16 @@ model FeedbackItem {
   triagedById        String?   @map("triaged_by") @db.Uuid
   archivedAt         DateTime? @map("archived_at") @db.Timestamptz
 
-  tenant  Tenant   @relation(fields: [tenantId], references: [id])
+  attributedCrewRoleId  String? @map("attributed_crew_role_id") @db.Uuid
+  attributedExecutorId  String? @map("attributed_executor_id") @db.Uuid
+
+  tenant     Tenant          @relation(fields: [tenantId], references: [id])
   session    FeedbackSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   task       Task?           @relation("FeedbackTask", fields: [taskId], references: [id])
   reviewedBy Person?         @relation("FeedbackReviewer", fields: [reviewedById], references: [id])
   triagedBy  Person?         @relation("FeedbackTriager", fields: [triagedById], references: [id])
+  attributedCrewRole CrewRole? @relation("FeedbackItemCrewRole", fields: [attributedCrewRoleId], references: [id])
+  attributedExecutor Executor? @relation("FeedbackItemExecutor", fields: [attributedExecutorId], references: [id])
 
   @@index([tenantId])
   @@index([sessionId], map: "idx_feedback_items_session")
@@ -1000,9 +1075,14 @@ model Opportunity {
   validationStatus   String    @default("confirmed") @map("validation_status") @db.VarChar(20)
   aiConfidence       Decimal?  @map("ai_confidence")
 
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  contact    Person?  @relation("OpportunityContact", fields: [contactId], references: [id])
-  owner      Person?  @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  crewRoleId String?   @map("crew_role_id") @db.Uuid
+  executorId String?   @map("executor_id") @db.Uuid
+
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  contact    Person?   @relation("OpportunityContact", fields: [contactId], references: [id])
+  owner      Person?   @relation("OpportunityOwner", fields: [ownerId], references: [id])
+  crewRole   CrewRole? @relation("OpportunityCrewRole", fields: [crewRoleId], references: [id])
+  executor   Executor? @relation("OpportunityExecutor", fields: [executorId], references: [id])
   activities   OpportunityActivity[]
   emailRecords EmailRecord[]
 
@@ -1011,6 +1091,7 @@ model Opportunity {
   @@index([ownerId], map: "idx_opportunities_owner")
   @@index([archivedAt], map: "idx_opportunities_archived")
   @@index([tenantId, stageId, kanbanOrder], map: "idx_opportunities_kanban")
+  @@index([crewRoleId], map: "idx_opportunities_crew_role")
   @@map("opportunities")
 }
 
@@ -1024,11 +1105,13 @@ model OpportunityActivity {
   scheduledAt    DateTime? @map("scheduled_at") @db.Timestamptz
   completedAt    DateTime? @map("completed_at") @db.Timestamptz
   createdById    String?   @map("created_by") @db.Uuid
+  executorId     String?   @map("executor_id") @db.Uuid
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   tenant      Tenant      @relation(fields: [tenantId], references: [id])
   opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   createdBy   Person?     @relation("ActivityCreator", fields: [createdById], references: [id])
+  executor    Executor?   @relation("ActivityExecutor", fields: [executorId], references: [id])
 
   @@index([tenantId])
   @@index([opportunityId, createdAt(sort: Desc)], map: "idx_opp_activities_opp")

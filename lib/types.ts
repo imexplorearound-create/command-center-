@@ -509,3 +509,84 @@ export interface CrossDepartmentSummary {
   executionPercent: number;
   projectCount: number;
 }
+
+// ─── Dashboard v1 ───────────────────────────────────────────
+
+export type CrewRoleSlug = "pipeline" | "comms" | "ops" | "qa";
+export type CrewState = "live" | "pending" | "thinking" | "idle";
+export type ExecutorKind = "clawbot" | "claude-code" | "mcp" | "humano" | "manual";
+export type AlertSeverity = "block" | "warn" | "pend";
+
+export interface CrewRoleCardData {
+  roleId: string | null;
+  slug: CrewRoleSlug;
+  name: string;
+  description: string;
+  color: string;
+  glyphKey: string;
+  state: CrewState;
+  executor: {
+    id: string | null;
+    kind: ExecutorKind;
+    name: string;
+    note: string | null;
+  };
+  lastLine: string | null;
+  load: number;
+}
+
+export interface AutonomyData {
+  percent: number;
+  aiTasks: number;
+  totalTasks: number;
+  windowDays: number;
+}
+
+export interface ProjectAtRiskData {
+  id: string;
+  name: string;
+  slug: string;
+  health: "warn" | "block";
+  reason: string;
+}
+
+export interface OpenDecisionData {
+  id: string;
+  title: string;
+  context: string;
+  deadline: string | null;
+  crewRoleSlug: CrewRoleSlug | null;
+  severity: AlertSeverity;
+}
+
+export interface PassiveAlertData {
+  id: string;
+  severity: AlertSeverity;
+  text: string;
+  crewRoleSlug: CrewRoleSlug | null;
+  href: string | null;
+}
+
+export interface DevVelocityData {
+  commits7d: number;
+  prsMerged7d: number;
+  commitsPrev7d: number;
+  prsPrev7d: number;
+}
+
+export interface PipelineValueData {
+  weightedValueCents: number;
+  openOpportunities: number;
+  currency: string;
+}
+
+export interface FeedEventData {
+  id: string;
+  time: Date;
+  crewRoleSlug: CrewRoleSlug | null;
+  executorKind: ExecutorKind | null;
+  executorName: string | null;
+  text: string;
+  pillKind: "decide" | "reve" | "feito" | null;
+  linkedDecisionId: string | null;
+}

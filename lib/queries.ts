@@ -1132,3 +1132,424 @@ export async function getProjectBySlug(slug: string): Promise<ProjectDetail | nu
     github: github ?? undefined,
   };
 }
+
+// ─── Dashboard v1 · queries ──────────────────────────────────
+//
+// Stubs with the final signatures. Queries that depend only on existing tables
+// return real data immediately. `getCrew()` returns hardcoded placeholders
+// until the `CrewRole`/`Executor` migration is applied and seeded.
+// `getOpenDecisions()` returns `[]` until decision P2 (tabela vs view) is
+// resolved.
+
+import type {
+  CrewRoleCardData,
+  AutonomyData,
+  ProjectAtRiskData,
+  OpenDecisionData,
+  PassiveAlertData,
+  DevVelocityData,
+  PipelineValueData,
+  FeedEventData,
+  CrewRoleSlug,
+  CrewState,
+  ExecutorKind,
+} from "./types";
+import {
+  AUTONOMY_WINDOW_DAYS,
+  FEED_DEFAULT_WINDOW_MINUTES,
+  calcAutonomyPercent,
+  classifyBudgetAlert,
+  mapAlertSeverity,
+} from "./dashboard-helpers";
+
+// Hardcoded crew defaults used while the DB seed is pending.
+const CREW_DEFAULTS: Array<{
+  slug: CrewRoleSlug;
+  name: string;
+  description: string;
+  color: string;
+  glyphKey: string;
+  executor: { kind: ExecutorKind; name: string; note: string };
+}> = [
+  {
+    slug: "pipeline",
+    name: "Pipeline",
+    description: "Leads, opportunities, outbound",
+    color: "#D4A843",
+    glyphKey: "pipeline",
+    executor: { kind: "clawbot", name: "Clawbot", note: "via Clawbot · crm-skill" },
+  },
+  {
+    slug: "comms",
+    name: "Comms",
+    description: "Conversas pós-venda e updates",
+    color: "#7C5CBF",
+    glyphKey: "comms",
+    executor: { kind: "claude-code", name: "Claude Code", note: "comms-skill" },
+  },
+  {
+    slug: "ops",
+    name: "Ops",
+    description: "Código, PRs, CI/CD",
+    color: "#3B7DD8",
+    glyphKey: "ops",
+    executor: { kind: "claude-code", name: "Claude Code", note: "build-skill · fallback Bruno" },
+  },
+  {
+    slug: "qa",
+    name: "QA",
+    description: "Triagem de feedback + validação",
+    color: "#2D8A5E",
+    glyphKey: "qa",
+    executor: { kind: "claude-code", name: "Claude Code", note: "triage-feedback" },
+  },
+];
+
+/**
+ * Crew column data — one card per CrewRole. Until the DB seed is run,
+ * returns hardcoded placeholders so the Dashboard renders. Once the
+ * `CrewRole`/`Executor` tables exist and are seeded, swap to a real query.
+ */
+export async function getCrew(): Promise<CrewRoleCardData[]> {
+  try {
+    const db = await getTenantDb();
+    // Probe: if the migration hasn't been applied, this throws and we fall
+    // back to the defaults below.
+    const roles = await (db as unknown as {
+      crewRole: {
+        findMany: (args: unknown) => Promise<Array<{
+          id: string;
+          slug: string;
+          name: string;
+          description: string | null;
+          color: string;
+          glyphKey: string;
+          executors: Array<{
+            id: string;
+            kind: string;
+            name: string;
+            note: string | null;
+            isPrimary: boolean;
+          }>;
+        }>>;
+      };
+    }).crewRole.findMany({
+      orderBy: { order: "asc" },
+      include: {
+        executors: {
+          where: { archivedAt: null },
+          orderBy: { isPrimary: "desc" },
+        },
+      },
+    });
+
+    if (roles.length === 0) throw new Error("no crew roles seeded");
+
+    return roles.map((r) => {
+      const primary = r.executors.find((e) => e.isPrimary) ?? r.executors[0];
+      return {
+        roleId: r.id,
+        slug: r.slug as CrewRoleSlug,
+        name: r.name,
+        description: r.description ?? "",
+        color: r.color,
+        glyphKey: r.glyphKey,
+        state: "idle" as CrewState, // real state logic lives in F2
+        executor: {
+          id: primary?.id ?? null,
+          kind: (primary?.kind ?? "manual") as ExecutorKind,
+          name: primary?.name ?? "—",
+          note: primary?.note ?? null,
+        },
+        lastLine: null,
+        load: 0,
+      };
+    });
+  } catch {
+    // Migration pending — return defaults so the UI renders.
+    return CREW_DEFAULTS.map((d) => ({
+      roleId: null,
+      slug: d.slug,
+      name: d.name,
+      description: d.description,
+      color: d.color,
+      glyphKey: d.glyphKey,
+      state: "idle",
+      executor: { id: null, kind: d.executor.kind, name: d.executor.name, note: d.executor.note },
+      lastLine: null,
+      load: 0,
+    }));
+  }
+}
+
+/**
+ * Autonomy % over the last 7 days.
+ * Ratio of AI-proposed tasks that were accepted (`confirmed` or
+ * `auto_confirmado`) vs. all tasks created in the window.
+ */
+export async function getAutonomy7d(): Promise<AutonomyData> {
+  const db = await getTenantDb();
+  const since = new Date(Date.now() - AUTONOMY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const where: Prisma.TaskWhereInput = { createdAt: { gte: since }, archivedAt: null };
+
+  const [totalTasks, aiTasks] = await Promise.all([
+    db.task.count({ where }),
+    db.task.count({
+      where: {
+        ...where,
+        aiExtracted: true,
+        validationStatus: { in: ["confirmed", "auto_confirmado"] },
+      },
+    }),
+  ]);
+
+  return {
+    percent: calcAutonomyPercent(aiTasks, totalTasks),
+    aiTasks,
+    totalTasks,
+    windowDays: AUTONOMY_WINDOW_DAYS,
+  };
+}
+
+/**
+ * Projects currently in `warn` or `block` health, ordered by severity then
+ * most recently updated.
+ */
+export async function getProjectsAtRisk(): Promise<ProjectAtRiskData[]> {
+  const db = await getTenantDb();
+  const projects = await db.project.findMany({
+    where: {
+      ...NOT_ARCHIVED,
+      status: "ativo",
+      health: { in: ["warn", "block"] },
+    },
+    select: { id: true, name: true, slug: true, health: true, description: true, updatedAt: true },
+    orderBy: [{ health: "desc" }, { updatedAt: "desc" }],
+    take: 10,
+  });
+
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    health: p.health as "warn" | "block",
+    reason: p.description ?? "sem contexto",
+  }));
+}
+
+/**
+ * Open decisions for the right-hand column.
+ *
+ * Blocked on decision P2 (addendum-alinhamento v2.1): whether "decisões"
+ * lives in a new `Decision` table or is a view aggregating
+ * `MaestroAction`/`Task`/signals. Until P2 is closed, returns [].
+ */
+export async function getOpenDecisions(): Promise<OpenDecisionData[]> {
+  return [];
+}
+
+/**
+ * Count of feedback items awaiting triage (pending + not archived).
+ */
+export async function getPendingFeedback(): Promise<number> {
+  const db = await getTenantDb();
+  return db.feedbackItem.count({
+    where: {
+      ...NOT_ARCHIVED_FEEDBACK_ITEM,
+      status: "pending",
+    },
+  });
+}
+
+/**
+ * GitHub-based dev velocity for the Dashboard metrics strip.
+ * Commits + PRs merged in the last 7d vs the previous 7d.
+ */
+export async function getDevVelocity(): Promise<DevVelocityData> {
+  const db = await getTenantDb();
+  const now = Date.now();
+  const d7 = 7 * 24 * 60 * 60 * 1000;
+  const since7 = new Date(now - d7);
+  const since14 = new Date(now - 2 * d7);
+
+  const [commits7d, commitsPrev7d, prsMerged7d, prsPrev7d] = await Promise.all([
+    db.githubEvent.count({
+      where: { eventType: "push", eventAt: { gte: since7 } },
+    }),
+    db.githubEvent.count({
+      where: { eventType: "push", eventAt: { gte: since14, lt: since7 } },
+    }),
+    db.githubEvent.count({
+      where: {
+        eventType: "pull_request",
+        action: "closed",
+        eventAt: { gte: since7 },
+      },
+    }),
+    db.githubEvent.count({
+      where: {
+        eventType: "pull_request",
+        action: "closed",
+        eventAt: { gte: since14, lt: since7 },
+      },
+    }),
+  ]);
+
+  return { commits7d, prsMerged7d, commitsPrev7d, prsPrev7d };
+}
+
+/**
+ * Pipeline value: sum(value × probability) over open, non-archived opps.
+ * Returned in cents so callers decide formatting.
+ */
+export async function getPipelineValue(): Promise<PipelineValueData> {
+  const db = await getTenantDb();
+  const opps = await db.opportunity.findMany({
+    where: {
+      archivedAt: null,
+      closedAt: null,
+    },
+    select: { value: true, probability: true, currency: true },
+  });
+
+  let totalCents = 0;
+  let currency = "EUR";
+  for (const o of opps) {
+    if (!o.value) continue;
+    const euros = Number(o.value);
+    const prob = o.probability / 100;
+    totalCents += Math.round(euros * 100 * prob);
+    currency = o.currency ?? currency;
+  }
+
+  return {
+    weightedValueCents: totalCents,
+    openOpportunities: opps.length,
+    currency,
+  };
+}
+
+/**
+ * Passive alerts for the right-hand column. Combines:
+ *  - existing `Alert` rows (mapped to 3-level severity)
+ *  - automatic budget alerts: projects whose InvestmentMap exceeds 90%
+ *    (warn) / 100% (block) execution — replaces the removed
+ *    `InvestmentSummaryCard` from the legacy dashboard.
+ */
+export async function getPassiveAlerts(): Promise<PassiveAlertData[]> {
+  const db = await getTenantDb();
+
+  // Existing alerts
+  const alerts = await db.alert.findMany({
+    where: { isDismissed: false },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: {
+      id: true,
+      severity: true,
+      title: true,
+      description: true,
+      project: { select: { slug: true } },
+    },
+  });
+
+  const base: PassiveAlertData[] = alerts.map((a) => ({
+    id: `alert:${a.id}`,
+    severity: mapAlertSeverity(a.severity),
+    text: a.description ? `${a.title} · ${a.description}` : a.title,
+    crewRoleSlug: null,
+    href: a.project?.slug ? `/project/${a.project.slug}` : null,
+  }));
+
+  // Budget alerts — aggregate rubric execution per project
+  const maps = await db.investmentMap.findMany({
+    where: { archivedAt: null },
+    select: {
+      id: true,
+      projectId: true,
+      project: { select: { name: true, slug: true } },
+      rubrics: { select: { budgetAllocated: true, budgetExecuted: true } },
+    },
+  });
+
+  for (const m of maps) {
+    const allocated = m.rubrics.reduce((sum, r) => sum + Number(r.budgetAllocated ?? 0), 0);
+    const executed = m.rubrics.reduce((sum, r) => sum + Number(r.budgetExecuted ?? 0), 0);
+    const severity = classifyBudgetAlert(executed, allocated);
+    if (!severity) continue;
+
+    const pct = Math.round((executed / allocated) * 100);
+    base.push({
+      id: `budget:${m.id}`,
+      severity,
+      text: `${m.project?.name ?? "Projecto"} · orçamento a ${pct}%`,
+      crewRoleSlug: null,
+      href: m.project?.slug ? `/project/${m.project.slug}` : null,
+    });
+  }
+
+  return base;
+}
+
+/**
+ * Feed events (last N minutes) for the central "Fluxo da manhã" stream.
+ * Pulls from `MaestroAction` + `Alert` so the Dashboard shows real activity
+ * today. Pills (`decide`/`revê`/`feito`) are always `null` on F1; F2 wires
+ * them up once `getOpenDecisions` has real data.
+ */
+export async function getFeedEvents(
+  windowMinutes: number = FEED_DEFAULT_WINDOW_MINUTES,
+): Promise<FeedEventData[]> {
+  const db = await getTenantDb();
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000);
+
+  const [actions, alerts] = await Promise.all([
+    db.maestroAction.findMany({
+      where: { createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      select: {
+        id: true,
+        createdAt: true,
+        agentId: true,
+        entityType: true,
+        action: true,
+      },
+    }),
+    db.alert.findMany({
+      where: { createdAt: { gte: since }, isDismissed: false },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        createdAt: true,
+        title: true,
+        type: true,
+      },
+    }),
+  ]);
+
+  const fromActions: FeedEventData[] = actions.map((a) => ({
+    id: `action:${a.id}`,
+    time: a.createdAt,
+    crewRoleSlug: null, // filled in F2 once crewRoleId is populated
+    executorKind: null,
+    executorName: a.agentId,
+    text: `${a.action} · ${a.entityType}`,
+    pillKind: null,
+    linkedDecisionId: null,
+  }));
+
+  const fromAlerts: FeedEventData[] = alerts.map((a) => ({
+    id: `alert:${a.id}`,
+    time: a.createdAt,
+    crewRoleSlug: null,
+    executorKind: null,
+    executorName: null,
+    text: a.title,
+    pillKind: null,
+    linkedDecisionId: null,
+  }));
+
+  return [...fromActions, ...fromAlerts].sort((a, b) => b.time.getTime() - a.time.getTime());
+}
