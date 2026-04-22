@@ -259,6 +259,87 @@ async function main() {
   });
   console.log("  GitHub repos created");
 
+  // ─── Crew (CrewRole + Executor) ─────────────────────────
+  // Idempotent via upsert on (tenantId, slug) — safe to re-run.
+  const crewRoles = [
+    { slug: "pipeline", name: "Pipeline", description: "Leads, opportunities, outbound", color: "#D4A843", glyphKey: "pipeline", order: 1 },
+    { slug: "comms",    name: "Comms",    description: "Conversas pós-venda e updates",  color: "#7C5CBF", glyphKey: "comms",    order: 2 },
+    { slug: "ops",      name: "Ops",      description: "Código, PRs, CI/CD",              color: "#3B7DD8", glyphKey: "ops",      order: 3 },
+    { slug: "qa",       name: "QA",       description: "Triagem de feedback + validação", color: "#2D8A5E", glyphKey: "qa",       order: 4 },
+  ];
+
+  const createdRoles = await Promise.all(
+    crewRoles.map((r) =>
+      prisma.crewRole.upsert({
+        where: { tenantId_slug: { tenantId, slug: r.slug } },
+        update: { name: r.name, description: r.description, color: r.color, glyphKey: r.glyphKey, order: r.order },
+        create: { tenantId, ...r },
+      })
+    )
+  );
+  console.log("  CrewRoles ready:", createdRoles.map((r) => r.slug).join(", "));
+
+  const bySlug = Object.fromEntries(createdRoles.map((r) => [r.slug, r]));
+
+  // 1 executor primário (kind=clawbot or claude-code) + 1 fallback humano por papel.
+  // api_client_id identifica o executor em chamadas à Agent API — único por tenant.
+  const executors = [
+    { crewRoleId: bySlug.pipeline!.id, kind: "clawbot",     name: "Clawbot",                   note: "via Clawbot · crm-skill",      isPrimary: true,  apiClientId: "clawbot-pipeline" },
+    { crewRoleId: bySlug.pipeline!.id, kind: "humano",      name: "Miguel Martins",            note: "fallback humano",              isPrimary: false, personId: miguel.id, apiClientId: null },
+    { crewRoleId: bySlug.comms!.id,    kind: "claude-code", name: "Claude Code · comms-skill", note: "resposta a emails de cliente", isPrimary: true,  apiClientId: "claude-comms" },
+    { crewRoleId: bySlug.comms!.id,    kind: "humano",      name: "Miguel Martins",            note: "fallback humano",              isPrimary: false, personId: miguel.id, apiClientId: null },
+    { crewRoleId: bySlug.ops!.id,      kind: "claude-code", name: "Claude Code · build-skill", note: "código, PRs, deploys",         isPrimary: true,  apiClientId: "claude-ops" },
+    { crewRoleId: bySlug.ops!.id,      kind: "humano",      name: "Bruno Fontes",              note: "via handoff",                  isPrimary: false, personId: bruno.id, apiClientId: null },
+    { crewRoleId: bySlug.qa!.id,       kind: "claude-code", name: "Claude Code · triage",      note: "triage-feedback",              isPrimary: true,  apiClientId: "claude-qa" },
+    { crewRoleId: bySlug.qa!.id,       kind: "humano",      name: "Miguel Martins",            note: "fallback humano",              isPrimary: false, personId: miguel.id, apiClientId: null },
+  ];
+
+  for (const e of executors) {
+    if (e.apiClientId) {
+      await prisma.executor.upsert({
+        where: { tenantId_apiClientId: { tenantId, apiClientId: e.apiClientId } },
+        update: {
+          crewRoleId: e.crewRoleId,
+          kind: e.kind,
+          name: e.name,
+          note: e.note,
+          isPrimary: e.isPrimary,
+          personId: e.personId ?? null,
+        },
+        create: {
+          tenantId,
+          crewRoleId: e.crewRoleId,
+          kind: e.kind,
+          name: e.name,
+          note: e.note,
+          isPrimary: e.isPrimary,
+          personId: e.personId ?? null,
+          apiClientId: e.apiClientId,
+        },
+      });
+    } else {
+      // Human fallbacks (apiClientId=null) — find-or-create by (crewRoleId, personId).
+      const existing = await prisma.executor.findFirst({
+        where: { tenantId, crewRoleId: e.crewRoleId, personId: e.personId, apiClientId: null },
+      });
+      if (!existing) {
+        await prisma.executor.create({
+          data: {
+            tenantId,
+            crewRoleId: e.crewRoleId,
+            kind: e.kind,
+            name: e.name,
+            note: e.note,
+            isPrimary: e.isPrimary,
+            personId: e.personId,
+            apiClientId: null,
+          },
+        });
+      }
+    }
+  }
+  console.log("  Executors ready:", executors.length);
+
   console.log("Seed complete!");
 }
 
