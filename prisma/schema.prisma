@@ -693,6 +693,10 @@ model Decision {
   taskId                String?   @map("task_id") @db.Uuid
   sourceMaestroActionId String?   @map("source_maestro_action_id") @db.Uuid
   feedbackItemId        String?   @map("feedback_item_id") @db.Uuid
+  // DB1 (fechada 23 Abr 2026): quando uma Decision é reaberta, cria-se
+  // nova row e a antiga guarda aqui o id da sucessora. Preserva histórico
+  // do feed "Resolvidas 24h" e habilita analytics de ciclo-de-vida.
+  reopenedById          String?   @map("reopened_by") @db.Uuid
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -704,6 +708,8 @@ model Decision {
   resolvedBy          Person?        @relation("DecisionResolvedBy", fields: [resolvedById], references: [id])
   sourceMaestroAction MaestroAction? @relation("DecisionSource", fields: [sourceMaestroActionId], references: [id])
   feedbackItem        FeedbackItem?  @relation("DecisionFeedback", fields: [feedbackItemId], references: [id])
+  reopenedBy          Decision?      @relation("DecisionReopen", fields: [reopenedById], references: [id])
+  reopenedFrom        Decision[]     @relation("DecisionReopen")
 
   @@index([tenantId, resolvedAt], map: "idx_decisions_tenant_resolved")
   @@index([tenantId, crewRoleId, resolvedAt], map: "idx_decisions_tenant_crew_resolved")

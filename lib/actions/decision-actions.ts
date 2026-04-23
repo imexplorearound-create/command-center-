@@ -112,10 +112,14 @@ export async function snoozeDecision(
   return { success: true };
 }
 
+// DB1 (fechada 23 Abr 2026): reabrir NÃO limpa `resolvedAt` da antiga.
+// Em vez disso cria nova row com mesma chave natural e a antiga guarda
+// `reopenedById: <newId>`. Preserva histórico do feed "Resolvidas 24h"
+// e habilita analytics de ciclo-de-vida.
 export async function reopenDecision(
-  _prev: ActionResult | undefined,
+  _prev: ActionResult<{ id: string }> | undefined,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ id: string }>> {
   const auth = await requireWriter();
   if (!auth.ok) return { error: auth.error };
 
@@ -125,13 +129,52 @@ export async function reopenDecision(
   if (!parsed.success) return { error: firstZodError(parsed.error) };
 
   const db = await getTenantDb();
-  await db.decision.update({
+  const old = await db.decision.findUnique({
     where: { id: parsed.data.decisionId },
-    data: { resolvedAt: null, resolvedById: null, resolutionNote: null },
+    select: {
+      id: true,
+      title: true,
+      context: true,
+      kind: true,
+      severity: true,
+      crewRoleId: true,
+      dueAt: true,
+      projectId: true,
+      opportunityId: true,
+      taskId: true,
+      sourceMaestroActionId: true,
+      feedbackItemId: true,
+      reopenedById: true,
+    },
+  });
+  if (!old) return { error: "Decisão não encontrada" };
+  if (old.reopenedById) return { error: "Esta decisão já foi reaberta" };
+
+  const next = await db.decision.create({
+    data: {
+      tenantId: "",
+      title: old.title,
+      context: old.context,
+      kind: old.kind,
+      severity: old.severity,
+      crewRoleId: old.crewRoleId,
+      dueAt: old.dueAt,
+      projectId: old.projectId,
+      opportunityId: old.opportunityId,
+      taskId: old.taskId,
+      sourceMaestroActionId: old.sourceMaestroActionId,
+      feedbackItemId: old.feedbackItemId,
+    },
+    select: { id: true },
+  });
+
+  await db.decision.update({
+    where: { id: old.id },
+    data: { reopenedById: next.id },
   });
 
   revalidatePath("/");
-  return { success: true };
+  return { success: true, data: { id: next.id } };
 }
 
 // ─── Recompute ────────────────────────────────────────────────────
