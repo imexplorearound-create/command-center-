@@ -1,7 +1,7 @@
 export { Kicker } from "./Kicker";
 export { Pill } from "./Pill";
 export { Card } from "./Card";
-export { HealthIndicator } from "./HealthIndicator";
+export { HealthIndicator, STATE_COLOR } from "./HealthIndicator";
 export type { HealthState, CrewState } from "./HealthIndicator";
 export { RoleTag } from "./RoleTag";
 export type { CrewRoleSlug } from "./RoleTag";

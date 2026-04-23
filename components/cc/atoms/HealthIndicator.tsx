@@ -9,7 +9,7 @@ type Props = {
   label?: string;
 };
 
-const COLOR: Record<HealthState | CrewState, string> = {
+export const STATE_COLOR: Record<HealthState | CrewState, string> = {
   ok: "var(--success, #2D8A5E)",
   warn: "var(--warning, #D4883A)",
   block: "var(--error, #C0392B)",
@@ -24,7 +24,7 @@ export function HealthIndicator({ state, size = 8, label }: Props) {
     width: size,
     height: size,
     borderRadius: 999,
-    background: COLOR[state],
+    background: STATE_COLOR[state],
     display: "inline-block",
     flexShrink: 0,
   };

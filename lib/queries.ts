@@ -1212,9 +1212,8 @@ export async function getCrew(): Promise<CrewRoleCardData[]> {
     const last = lastActionByRole.get(r.id);
     const msSince = last ? now - last.at.getTime() : null;
     const state = computeCrewState(msSince, pending);
-    const lastLine = last
-      ? `${last.type} · ${formatSince(msSince!)}`
-      : null;
+    const lastLine =
+      last && msSince !== null ? `${last.type} · ${formatSince(msSince)}` : null;
     return {
       roleId: r.id,
       slug: r.slug as CrewRoleSlug,

@@ -1,11 +1,5 @@
-import { AgentGlyph, HealthIndicator, ExecutorBadge } from "@/components/cc/atoms";
-import type { CrewRoleCardData, AutonomyData, CrewState } from "@/lib/types";
-
-const STATE_LABEL: Record<Exclude<CrewState, "idle">, string> = {
-  live: "live",
-  pending: "pending",
-  thinking: "thinking",
-};
+import { AgentGlyph, HealthIndicator, ExecutorBadge, STATE_COLOR } from "@/components/cc/atoms";
+import type { CrewRoleCardData, AutonomyData } from "@/lib/types";
 
 type Props = {
   crew: CrewRoleCardData[];
@@ -122,8 +116,8 @@ function RoleCard({ role }: { role: CrewRoleCardData }) {
           {role.name}
         </span>
         {role.state !== "idle" ? (
-          <span className="meta" style={{ color: role.color }}>
-            {STATE_LABEL[role.state]}
+          <span className="meta" style={{ color: STATE_COLOR[role.state] }}>
+            {role.state}
           </span>
         ) : null}
       </div>
