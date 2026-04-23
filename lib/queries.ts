@@ -1300,7 +1300,11 @@ export async function getProjectsAtRisk(): Promise<ProjectAtRiskData[]> {
  * Open decisions for the right-hand column — only the ones currently
  * actionable (not resolved, not snoozed into the future).
  */
-export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> {
+export type DecisionSortMode = "maestro" | "recent";
+
+export async function getOpenDecisions(
+  { sort = "maestro", limit = 20 }: { sort?: DecisionSortMode; limit?: number } = {},
+): Promise<OpenDecisionData[]> {
   const db = await getTenantDb();
   const now = new Date();
   const rows = await db.decision.findMany({
@@ -1322,14 +1326,19 @@ export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> 
     take: limit,
   });
 
-  rows.sort((a, b) => {
-    const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
-    if (sev !== 0) return sev;
-    if (!a.dueAt && !b.dueAt) return 0;
-    if (!a.dueAt) return 1;
-    if (!b.dueAt) return -1;
-    return a.dueAt.getTime() - b.dueAt.getTime();
-  });
+  // "recent" devolve na ordem da query (createdAt DESC). "maestro" (default)
+  // re-ordena por severidade + dueAt — invariante para a F3 priorização
+  // inteligente; F3 Passo E poderá enriquecer com priority+confidence.
+  if (sort === "maestro") {
+    rows.sort((a, b) => {
+      const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
+      if (sev !== 0) return sev;
+      if (!a.dueAt && !b.dueAt) return 0;
+      if (!a.dueAt) return 1;
+      if (!b.dueAt) return -1;
+      return a.dueAt.getTime() - b.dueAt.getTime();
+    });
+  }
 
   return rows.map((r) => ({
     id: r.id,

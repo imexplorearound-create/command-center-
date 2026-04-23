@@ -98,3 +98,42 @@ describe("DecisionsColumn — modo interactivo (default)", () => {
     expect(screen.getByText(/Miguel/)).toBeTruthy();
   });
 });
+
+describe("DecisionsColumn — toggle de ordenação (DB3)", () => {
+  it("mostra toggle 'maestro · recentes' quando viewing='open'", () => {
+    render(<DecisionsColumn decisions={[DEC]} viewing="open" sort="maestro" />);
+    const nav = screen.getByRole("navigation", { name: /ordenação das decis/i });
+    const links = nav.querySelectorAll("a");
+    expect(links.length).toBe(2);
+    expect(nav.textContent).toContain("maestro");
+    expect(nav.textContent).toContain("recentes");
+  });
+
+  it("esconde o toggle de ordenação em viewing='resolved'", () => {
+    render(<DecisionsColumn decisions={[]} resolved={[RESOLVED]} viewing="resolved" />);
+    expect(screen.queryByRole("navigation", { name: /ordenação/i })).toBeNull();
+  });
+
+  it("esconde o toggle de ordenação em readOnly", () => {
+    render(<DecisionsColumn decisions={[DEC]} readOnly />);
+    expect(screen.queryByRole("navigation", { name: /ordenação/i })).toBeNull();
+  });
+
+  it("link 'recentes' aponta para ?sort=recent (shareable)", () => {
+    render(<DecisionsColumn decisions={[DEC]} viewing="open" sort="maestro" />);
+    const nav = screen.getByRole("navigation", { name: /ordenação/i });
+    const recentLink = Array.from(nav.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("recentes"),
+    );
+    expect(recentLink?.getAttribute("href")).toBe("/?sort=recent");
+  });
+
+  it("link 'maestro' aponta para / (reset para default)", () => {
+    render(<DecisionsColumn decisions={[DEC]} viewing="open" sort="recent" />);
+    const nav = screen.getByRole("navigation", { name: /ordenação/i });
+    const maestroLink = Array.from(nav.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("maestro"),
+    );
+    expect(maestroLink?.getAttribute("href")).toBe("/");
+  });
+});

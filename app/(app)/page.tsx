@@ -24,7 +24,7 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = { decisions?: string };
+type SearchParams = { decisions?: string; sort?: string };
 
 export default async function DashboardPage({
   searchParams,
@@ -35,6 +35,7 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
 
   const decisionsView = sp.decisions === "resolved" ? "resolved" : "open";
+  const decisionsSort = sp.sort === "recent" ? "recent" : "maestro";
 
   const [
     crew,
@@ -53,7 +54,7 @@ export default async function DashboardPage({
     getAutonomy7d(),
     getProjects(user),
     getProjectsAtRisk(),
-    getOpenDecisions(),
+    getOpenDecisions({ sort: decisionsSort }),
     decisionsView === "resolved" ? getResolvedDecisions24h() : Promise.resolve([]),
     getPendingFeedback(),
     getDevVelocity(),
@@ -111,6 +112,7 @@ export default async function DashboardPage({
           decisions={decisions}
           resolved={resolvedDecisions}
           viewing={decisionsView}
+          sort={decisionsSort}
         />
         <AlertsPassive alerts={alerts} />
         <TvCard />
