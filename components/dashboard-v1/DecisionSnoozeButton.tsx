@@ -21,14 +21,20 @@ export function DecisionSnoozeButton({ decisionId }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Click fora do wrapper fecha o menu.
+  // Click fora do wrapper + tecla Escape fecham o menu. Listeners só ficam
+  // activos quando o menu está aberto — evita custo em idle.
   useEffect(() => {
     if (!open) return;
+    const controller = new AbortController();
     const onDocClick = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick, { signal: controller.signal });
+    document.addEventListener("keydown", onKeyDown, { signal: controller.signal });
+    return () => controller.abort();
   }, [open]);
 
   const handlePick = (hours: number) => {

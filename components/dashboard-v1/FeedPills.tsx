@@ -1,9 +1,15 @@
 "use client";
 
 import { SEVERITY_COLOR } from "@/lib/dashboard-helpers";
+import {
+  HIGHLIGHT_DECISION_EVENT,
+  dispatchDashboardEvent,
+} from "@/lib/dashboard-events";
 import type { FeedEventData } from "@/lib/types";
 
-export const HIGHLIGHT_EVENT = "cc:highlight-decision";
+// Re-export para compatibilidade com call sites que importam daqui.
+// Canonical: `@/lib/dashboard-events`.
+export const HIGHLIGHT_EVENT = HIGHLIGHT_DECISION_EVENT;
 
 type PillKind = NonNullable<FeedEventData["pillKind"]>;
 
@@ -30,9 +36,7 @@ export function FeedPill({ kind, decisionId }: Props) {
 
   const onClick = () => {
     if (!decisionId) return;
-    window.dispatchEvent(
-      new CustomEvent(HIGHLIGHT_EVENT, { detail: { decisionId } }),
-    );
+    dispatchDashboardEvent(HIGHLIGHT_DECISION_EVENT, { decisionId });
   };
 
   return (

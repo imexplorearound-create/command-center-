@@ -149,23 +149,23 @@ export async function reopenDecision(
     },
   });
   if (!old) return { error: "Decisão não encontrada" };
+  // A cadeia é linear: A → B → C. Quando se reabre A cria-se B; se B
+  // for resolvida e reaberta cria-se C. O que este guard impede é
+  // reabrir A duas vezes (criaria duas sucessoras a competir pelo
+  // estado "vivo"). A sucessora pode ser reaberta normalmente.
   if (old.reopenedById) return { error: "Esta decisão já foi reaberta" };
 
+  // Destructure para copiar TODOS os campos herdáveis. Se o schema ganhar
+  // novo campo (ex. `assignedToRoleId`) e estiver no `select` acima, é
+  // propagado automaticamente para a nova row — fail-safe com schema
+  // growth (vs. enumerar à mão e arriscar esquecer). Excluímos
+  // `id` (auto) e `reopenedById` (nova começa sem sucessora).
+  const { id: _oldId, reopenedById: _oldReopenedBy, ...inheritable } = old;
+  void _oldId;
+  void _oldReopenedBy;
+
   const next = await db.decision.create({
-    data: {
-      tenantId: "",
-      title: old.title,
-      context: old.context,
-      kind: old.kind,
-      severity: old.severity,
-      crewRoleId: old.crewRoleId,
-      dueAt: old.dueAt,
-      projectId: old.projectId,
-      opportunityId: old.opportunityId,
-      taskId: old.taskId,
-      sourceMaestroActionId: old.sourceMaestroActionId,
-      feedbackItemId: old.feedbackItemId,
-    },
+    data: { ...inheritable, tenantId: "" },
     select: { id: true },
   });
 

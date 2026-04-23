@@ -132,3 +132,25 @@ export const FEEDBACK_STATUS_COLOR: Record<
   reviewed: "var(--accent, #B08A2C)",
   archived: "var(--muted, #8A8778)",
 };
+
+// Constrói os sinais que o Hero/selector do Maestro precisam a partir dos
+// dados já buscados pela página. Extraído porque `/` e `/tv` faziam o
+// mesmo cálculo 1-a-1 — helper dá 1 sítio para adicionar novos sinais
+// (hora de Lisboa, urgência, dia da semana) no futuro.
+import type { HeroSignals } from "./maestro/voice/types";
+
+export function buildHeroSignals(input: {
+  userName: string;
+  decisions: ReadonlyArray<{ severity: string }>;
+  projectsAtRiskCount: number;
+  now?: Date;
+}): HeroSignals {
+  const now = input.now ?? new Date();
+  return {
+    userName: input.userName,
+    openDecisions: input.decisions.length,
+    blockDecisions: input.decisions.filter((d) => d.severity === "block").length,
+    projectsAtRisk: input.projectsAtRiskCount,
+    hourOfDay: now.getHours(),
+  };
+}

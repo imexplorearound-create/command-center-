@@ -19,6 +19,7 @@ import {
   getPassiveAlerts,
   getFeedEvents,
 } from "@/lib/queries";
+import { buildHeroSignals } from "@/lib/dashboard-helpers";
 import { getAuthUser } from "@/lib/auth/dal";
 import { redirect } from "next/navigation";
 
@@ -65,13 +66,11 @@ export default async function DashboardPage({
 
   const activeProjects = projects.filter((p) => p.status === "ativo").slice(0, 10);
   const firstName = user.name.split(" ")[0] ?? user.name;
-  const heroSignals = {
+  const heroSignals = buildHeroSignals({
     userName: firstName,
-    openDecisions: decisions.length,
-    blockDecisions: decisions.filter((d) => d.severity === "block").length,
-    projectsAtRisk: projectsAtRisk.length,
-    hourOfDay: new Date().getHours(),
-  };
+    decisions,
+    projectsAtRiskCount: projectsAtRisk.length,
+  });
 
   return (
     <div

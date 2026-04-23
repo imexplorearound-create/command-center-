@@ -1,5 +1,6 @@
 "use client";
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { OPEN_MAESTRO_EVENT, useDashboardEvent } from "@/lib/dashboard-events";
 
 interface MaestroContextValue {
   open: boolean;
@@ -12,10 +13,8 @@ interface MaestroContextValue {
 
 const MaestroCtx = createContext<MaestroContextValue | null>(null);
 
-// F3 Passo F: event global que abre o painel do Maestro a partir de
-// qualquer ponto da UI (Crew column, Hero, etc.) sem ter de propagar o
-// callback por todos os níveis. Pattern igual a `cc:highlight-decision`.
-export const OPEN_MAESTRO_EVENT = "cc:open-maestro";
+// Re-export para compatibilidade — canonical é `@/lib/dashboard-events`.
+export { OPEN_MAESTRO_EVENT };
 
 export function MaestroProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -25,11 +24,9 @@ export function MaestroProvider({ children }: { children: ReactNode }) {
   const close = useCallback(() => setOpen(false), []);
   const newConversation = useCallback(() => setConversationId(null), []);
 
-  useEffect(() => {
-    const onOpen = () => setOpen(true);
-    window.addEventListener(OPEN_MAESTRO_EVENT, onOpen);
-    return () => window.removeEventListener(OPEN_MAESTRO_EVENT, onOpen);
-  }, []);
+  // `useDashboardEvent` usa AbortController no cleanup — previne listeners
+  // duplos caso o provider re-mounte (logout/login, mudanças de sub-tree).
+  useDashboardEvent(OPEN_MAESTRO_EVENT, () => setOpen(true));
 
   return (
     <MaestroCtx.Provider

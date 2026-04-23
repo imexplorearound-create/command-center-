@@ -1,9 +1,15 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
+import {
+  FOCUS_DECISIONS_EVENT,
+  OPEN_MAESTRO_EVENT,
+  dispatchDashboardEvent,
+} from "@/lib/dashboard-events";
 
-export const FOCUS_DECISIONS_EVENT = "cc:focus-decisions";
-export const OPEN_MAESTRO_EVENT = "cc:open-maestro";
+// Re-exports para compatibilidade com call sites anteriores à extracção
+// de `@/lib/dashboard-events`. Para novo código, importar daí directamente.
+export { FOCUS_DECISIONS_EVENT, OPEN_MAESTRO_EVENT };
 
 type Action =
   | { kind: "focus-decisions" }
@@ -22,11 +28,11 @@ type Props = {
 // o pub/sub.
 export function InlineActionButton({ children, action, style, ...rest }: Props) {
   const onClick = () => {
-    const event =
-      action.kind === "focus-decisions"
-        ? new CustomEvent(FOCUS_DECISIONS_EVENT)
-        : new CustomEvent(OPEN_MAESTRO_EVENT, { detail: action.context ?? {} });
-    window.dispatchEvent(event);
+    if (action.kind === "focus-decisions") {
+      dispatchDashboardEvent(FOCUS_DECISIONS_EVENT);
+    } else {
+      dispatchDashboardEvent(OPEN_MAESTRO_EVENT, action.context ?? {});
+    }
   };
 
   return (
