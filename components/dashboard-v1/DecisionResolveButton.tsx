@@ -11,14 +11,6 @@ export function DecisionResolveButton({ decisionId }: Props) {
   const [state, formAction, pending] = useActionState(resolveDecision, undefined);
   const [showNote, setShowNote] = useState(false);
 
-  if (state && "success" in state && state.success) {
-    return (
-      <span className="mono" style={{ color: "var(--success)" }}>
-        ✓ resolvido
-      </span>
-    );
-  }
-
   return (
     <form
       action={formAction}
@@ -56,6 +48,7 @@ export function DecisionResolveButton({ decisionId }: Props) {
             type="button"
             className="btn btn-ghost"
             onClick={() => setShowNote(true)}
+            aria-label="Adicionar nota de resolução"
             title="Adicionar nota de resolução"
           >
             +

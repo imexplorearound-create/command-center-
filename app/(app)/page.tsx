@@ -54,7 +54,7 @@ export default async function DashboardPage({
     getProjects(user),
     getProjectsAtRisk(),
     getOpenDecisions(),
-    getResolvedDecisions24h(),
+    decisionsView === "resolved" ? getResolvedDecisions24h() : Promise.resolve([]),
     getPendingFeedback(),
     getDevVelocity(),
     getPipelineValue(),

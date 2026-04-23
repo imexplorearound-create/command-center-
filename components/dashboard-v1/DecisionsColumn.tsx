@@ -22,11 +22,15 @@ export function DecisionsColumn({ decisions, resolved = [], viewing = "open" }: 
       <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 8 }}>
         <Kicker>Decisões</Kicker>
         <nav style={{ display: "flex", gap: 6 }} aria-label="vista das decisões">
-          <ToggleLink href="/" active={!isResolved} label={`abertas · ${decisions.length}`} />
+          <ToggleLink
+            href="/"
+            active={!isResolved}
+            label={isResolved ? "abertas" : `abertas · ${decisions.length}`}
+          />
           <ToggleLink
             href="/?decisions=resolved"
             active={isResolved}
-            label={`resolvidas · ${resolved.length}`}
+            label={isResolved ? `resolvidas · ${resolved.length}` : "resolvidas"}
           />
         </nav>
       </header>
