@@ -1163,6 +1163,7 @@ import {
   computeCrewLoad,
   formatSince,
 } from "./dashboard-helpers";
+import { narrateAlert } from "./maestro/alert-narrator";
 
 export async function getCrew(): Promise<CrewRoleCardData[]> {
   const db = await getTenantDb();
@@ -1464,39 +1465,66 @@ export async function getPipelineValue(): Promise<PipelineValueData> {
  */
 export async function getPassiveAlerts(): Promise<PassiveAlertData[]> {
   const db = await getTenantDb();
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+  const HOUR = 60 * 60 * 1000;
 
-  // Existing alerts
-  const alerts = await db.alert.findMany({
-    where: { isDismissed: false },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    select: {
-      id: true,
-      severity: true,
-      title: true,
-      description: true,
-      project: { select: { slug: true } },
-    },
-  });
+  const [alerts, maps, staleOpps, staleAITasks, blockedProjects] = await Promise.all([
+    db.alert.findMany({
+      where: { isDismissed: false },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        severity: true,
+        title: true,
+        description: true,
+        project: { select: { slug: true } },
+      },
+    }),
+    db.investmentMap.findMany({
+      where: { archivedAt: null },
+      select: {
+        id: true,
+        projectId: true,
+        project: { select: { name: true, slug: true } },
+        rubrics: { select: { budgetAllocated: true, budgetExecuted: true } },
+      },
+    }),
+    db.opportunity.findMany({
+      where: {
+        archivedAt: null,
+        closedAt: null,
+        stageEnteredAt: { lt: new Date(now - 14 * DAY) },
+      },
+      select: { id: true, title: true, stageEnteredAt: true },
+    }),
+    db.task.findMany({
+      where: {
+        archivedAt: null,
+        aiExtracted: true,
+        validationStatus: "por_confirmar",
+        createdAt: { lt: new Date(now - 48 * HOUR) },
+      },
+      select: { id: true, title: true, createdAt: true, project: { select: { slug: true } } },
+    }),
+    db.project.findMany({
+      where: { archivedAt: null, health: "block" },
+      select: { id: true, name: true, slug: true },
+    }),
+  ]);
 
-  const base: PassiveAlertData[] = alerts.map((a) => ({
-    id: `alert:${a.id}`,
-    severity: mapAlertSeverity(a.severity),
-    text: a.description ? `${a.title} · ${a.description}` : a.title,
-    crewRoleSlug: null,
-    href: a.project?.slug ? `/project/${a.project.slug}` : null,
-  }));
+  const result: PassiveAlertData[] = [];
 
-  // Budget alerts — aggregate rubric execution per project
-  const maps = await db.investmentMap.findMany({
-    where: { archivedAt: null },
-    select: {
-      id: true,
-      projectId: true,
-      project: { select: { name: true, slug: true } },
-      rubrics: { select: { budgetAllocated: true, budgetExecuted: true } },
-    },
-  });
+  for (const a of alerts) {
+    result.push({
+      id: `alert:${a.id}`,
+      severity: mapAlertSeverity(a.severity),
+      text: a.description ? `${a.title} · ${a.description}` : a.title,
+      crewRoleSlug: null,
+      href: a.project?.slug ? `/project/${a.project.slug}` : null,
+    });
+  }
 
   for (const m of maps) {
     const { allocated, executed } = m.rubrics.reduce(
@@ -1510,16 +1538,51 @@ export async function getPassiveAlerts(): Promise<PassiveAlertData[]> {
     if (!severity) continue;
 
     const pct = Math.round((executed / allocated) * 100);
-    base.push({
+    result.push({
       id: `budget:${m.id}`,
       severity,
-      text: `${m.project?.name ?? "Projecto"} · orçamento a ${pct}%`,
+      text: narrateAlert(severity === "block" ? "budget_block" : "budget_warn", {
+        project: m.project?.name ?? "Projecto",
+        pct,
+      }),
       crewRoleSlug: null,
       href: m.project?.slug ? `/project/${m.project.slug}` : null,
     });
   }
 
-  return base;
+  for (const o of staleOpps) {
+    const days = Math.floor((now - o.stageEnteredAt.getTime()) / DAY);
+    result.push({
+      id: `opp-inactive:${o.id}`,
+      severity: "warn",
+      text: narrateAlert("opp_inactive", { title: o.title, days }),
+      crewRoleSlug: "pipeline",
+      href: "/crm",
+    });
+  }
+
+  for (const t of staleAITasks) {
+    const hours = Math.floor((now - t.createdAt.getTime()) / HOUR);
+    result.push({
+      id: `task-unvalidated:${t.id}`,
+      severity: "pend",
+      text: narrateAlert("task_validation_stale", { title: t.title, hours }),
+      crewRoleSlug: "qa",
+      href: t.project?.slug ? `/project/${t.project.slug}` : null,
+    });
+  }
+
+  for (const p of blockedProjects) {
+    result.push({
+      id: `project-block:${p.id}`,
+      severity: "block",
+      text: narrateAlert("project_health_block", { project: p.name }),
+      crewRoleSlug: "ops",
+      href: `/project/${p.slug}`,
+    });
+  }
+
+  return result;
 }
 
 /**
