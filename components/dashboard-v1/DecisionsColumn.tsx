@@ -1,6 +1,7 @@
 import { Kicker, Pill } from "@/components/cc/atoms";
 import { SEVERITY_COLOR } from "@/lib/dashboard-helpers";
 import type { OpenDecisionData } from "@/lib/types";
+import { DecisionsHighlighter } from "./DecisionsHighlighter";
 
 type Props = {
   decisions: OpenDecisionData[];
@@ -12,6 +13,7 @@ export function DecisionsColumn({ decisions }: Props) {
 
   return (
     <section>
+      <DecisionsHighlighter />
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
         <Kicker>Decisões</Kicker>
         {decisions.length > 7 ? (
@@ -68,6 +70,7 @@ function ExpandedDecisionCard({ decision }: { decision: OpenDecisionData }) {
   return (
     <article
       className="card"
+      data-decision-id={decision.id}
       style={{
         background: "var(--bg-2)",
         padding: 14,
@@ -127,6 +130,7 @@ function ExpandedDecisionCard({ decision }: { decision: OpenDecisionData }) {
 function CompactDecisionRow({ decision }: { decision: OpenDecisionData }) {
   return (
     <div
+      data-decision-id={decision.id}
       style={{
         display: "flex",
         alignItems: "baseline",

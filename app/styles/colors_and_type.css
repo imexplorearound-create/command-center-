@@ -248,3 +248,13 @@
   0%, 100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.6; transform: scale(0.82); }
 }
+
+/* Highlight ring used by DecisionsHighlighter when a feed pill scrolls
+ * to a decision card. Fades back via transition + JS-timed class removal. */
+.portiqa-theme [data-decision-id] {
+  transition: box-shadow 0.4s ease, background 0.4s ease;
+}
+.portiqa-theme [data-decision-id].is-highlighted {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 70%, transparent);
+  background: color-mix(in oklch, var(--accent) 10%, var(--bg-2));
+}

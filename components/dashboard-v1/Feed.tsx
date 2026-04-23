@@ -1,4 +1,5 @@
 import type { FeedEventData } from "@/lib/types";
+import { FeedPill } from "./FeedPills";
 
 type Props = {
   events: FeedEventData[];
@@ -93,17 +94,31 @@ export function Feed({ events, windowMinutes = 90 }: Props) {
                   </span>
                 ) : null}
               </div>
-              <p
+              <div
                 style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 13,
-                  color: "var(--ink-2)",
-                  margin: 0,
-                  lineHeight: 1.45,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
                 }}
               >
-                {e.text}
-              </p>
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: "var(--ink-2)",
+                    margin: 0,
+                    lineHeight: 1.45,
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {e.text}
+                </p>
+                {e.pillKind ? (
+                  <FeedPill kind={e.pillKind} decisionId={e.linkedDecisionId} />
+                ) : null}
+              </div>
             </li>
           ))}
         </ol>

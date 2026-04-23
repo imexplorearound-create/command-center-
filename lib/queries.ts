@@ -1595,9 +1595,11 @@ export async function getFeedEvents(
   windowMinutes: number = FEED_DEFAULT_WINDOW_MINUTES,
 ): Promise<FeedEventData[]> {
   const db = await getTenantDb();
-  const since = new Date(Date.now() - windowMinutes * 60 * 1000);
+  const now = Date.now();
+  const since = new Date(now - windowMinutes * 60 * 1000);
+  const since24h = new Date(now - 24 * 60 * 60 * 1000);
 
-  const [actions, alerts] = await Promise.all([
+  const [actions, alerts, openDecisions, resolvedDecisions] = await Promise.all([
     db.maestroAction.findMany({
       where: { createdAt: { gte: since } },
       orderBy: { createdAt: "desc" },
@@ -1608,31 +1610,56 @@ export async function getFeedEvents(
         agentId: true,
         entityType: true,
         action: true,
+        crewRole: { select: { slug: true } },
+        executor: { select: { kind: true, name: true } },
       },
     }),
     db.alert.findMany({
       where: { createdAt: { gte: since }, isDismissed: false },
       orderBy: { createdAt: "desc" },
       take: 20,
+      select: { id: true, createdAt: true, title: true, type: true },
+    }),
+    db.decision.findMany({
+      where: {
+        resolvedAt: null,
+        OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: new Date(now) } }],
+      },
+      select: { id: true, sourceMaestroActionId: true, severity: true },
+    }),
+    db.decision.findMany({
+      where: { resolvedAt: { gte: since24h } },
+      orderBy: { resolvedAt: "desc" },
+      take: 20,
       select: {
         id: true,
-        createdAt: true,
         title: true,
-        type: true,
+        resolvedAt: true,
+        crewRole: { select: { slug: true } },
       },
     }),
   ]);
 
-  const fromActions: FeedEventData[] = actions.map((a) => ({
-    id: `action:${a.id}`,
-    time: a.createdAt,
-    crewRoleSlug: null, // filled in F2 once crewRoleId is populated
-    executorKind: null,
-    executorName: a.agentId,
-    text: `${a.action} · ${a.entityType}`,
-    pillKind: null,
-    linkedDecisionId: null,
-  }));
+  const openBySourceAction = new Map<string, { id: string; severity: string }>();
+  for (const d of openDecisions) {
+    if (d.sourceMaestroActionId) {
+      openBySourceAction.set(d.sourceMaestroActionId, { id: d.id, severity: d.severity });
+    }
+  }
+
+  const fromActions: FeedEventData[] = actions.map((a) => {
+    const linked = openBySourceAction.get(a.id);
+    return {
+      id: `action:${a.id}`,
+      time: a.createdAt,
+      crewRoleSlug: (a.crewRole?.slug ?? null) as FeedEventData["crewRoleSlug"],
+      executorKind: (a.executor?.kind ?? null) as FeedEventData["executorKind"],
+      executorName: a.executor?.name ?? a.agentId,
+      text: `${a.action} · ${a.entityType}`,
+      pillKind: linked ? (linked.severity === "block" ? "decide" : "reve") : null,
+      linkedDecisionId: linked?.id ?? null,
+    };
+  });
 
   const fromAlerts: FeedEventData[] = alerts.map((a) => ({
     id: `alert:${a.id}`,
@@ -1645,5 +1672,18 @@ export async function getFeedEvents(
     linkedDecisionId: null,
   }));
 
-  return [...fromActions, ...fromAlerts].sort((a, b) => b.time.getTime() - a.time.getTime());
+  const fromResolved: FeedEventData[] = resolvedDecisions.map((d) => ({
+    id: `decision-resolved:${d.id}`,
+    time: d.resolvedAt!,
+    crewRoleSlug: (d.crewRole?.slug ?? null) as FeedEventData["crewRoleSlug"],
+    executorKind: null,
+    executorName: null,
+    text: `resolvido · ${d.title}`,
+    pillKind: "feito",
+    linkedDecisionId: d.id,
+  }));
+
+  return [...fromActions, ...fromAlerts, ...fromResolved].sort(
+    (a, b) => b.time.getTime() - a.time.getTime(),
+  );
 }
