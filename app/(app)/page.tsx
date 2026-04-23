@@ -12,6 +12,7 @@ import {
   getProjects,
   getProjectsAtRisk,
   getOpenDecisions,
+  getResolvedDecisions24h,
   getPendingFeedback,
   getDevVelocity,
   getPipelineValue,
@@ -23,9 +24,17 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const user = await getAuthUser();
+type SearchParams = { decisions?: string };
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const [user, sp] = await Promise.all([getAuthUser(), searchParams]);
   if (!user) redirect("/login");
+
+  const decisionsView = sp.decisions === "resolved" ? "resolved" : "open";
 
   const [
     crew,
@@ -33,6 +42,7 @@ export default async function DashboardPage() {
     projects,
     projectsAtRisk,
     decisions,
+    resolvedDecisions,
     pendingFeedback,
     devVelocity,
     pipelineValue,
@@ -44,6 +54,7 @@ export default async function DashboardPage() {
     getProjects(user),
     getProjectsAtRisk(),
     getOpenDecisions(),
+    getResolvedDecisions24h(),
     getPendingFeedback(),
     getDevVelocity(),
     getPipelineValue(),
@@ -89,7 +100,11 @@ export default async function DashboardPage() {
           flexDirection: "column",
         }}
       >
-        <DecisionsColumn decisions={decisions} />
+        <DecisionsColumn
+          decisions={decisions}
+          resolved={resolvedDecisions}
+          viewing={decisionsView}
+        />
         <AlertsPassive alerts={alerts} />
         <TvCard />
       </aside>

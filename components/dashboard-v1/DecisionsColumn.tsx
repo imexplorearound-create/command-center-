@@ -1,33 +1,39 @@
+import Link from "next/link";
 import { Kicker, Pill } from "@/components/cc/atoms";
-import { SEVERITY_COLOR } from "@/lib/dashboard-helpers";
-import type { OpenDecisionData } from "@/lib/types";
+import { SEVERITY_COLOR, formatSince } from "@/lib/dashboard-helpers";
+import type { OpenDecisionData, ResolvedDecisionData } from "@/lib/types";
 import { DecisionsHighlighter } from "./DecisionsHighlighter";
+import { DecisionResolveButton } from "./DecisionResolveButton";
 
 type Props = {
   decisions: OpenDecisionData[];
+  resolved?: ResolvedDecisionData[];
+  viewing?: "open" | "resolved";
 };
 
-export function DecisionsColumn({ decisions }: Props) {
+export function DecisionsColumn({ decisions, resolved = [], viewing = "open" }: Props) {
+  const isResolved = viewing === "resolved";
   const expanded = decisions.slice(0, 3);
   const overflow = decisions.slice(3);
 
   return (
     <section>
       <DecisionsHighlighter />
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+      <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 8 }}>
         <Kicker>Decisões</Kicker>
-        {decisions.length > 7 ? (
-          <span
-            className="mono"
-            style={{ color: "var(--warning, #D4883A)" }}
-            title="Muitas decisões abertas — considera adiar ou delegar"
-          >
-            {decisions.length} abertas
-          </span>
-        ) : null}
-      </div>
+        <nav style={{ display: "flex", gap: 6 }} aria-label="vista das decisões">
+          <ToggleLink href="/" active={!isResolved} label={`abertas · ${decisions.length}`} />
+          <ToggleLink
+            href="/?decisions=resolved"
+            active={isResolved}
+            label={`resolvidas · ${resolved.length}`}
+          />
+        </nav>
+      </header>
 
-      {decisions.length === 0 ? (
+      {isResolved ? (
+        <ResolvedList resolved={resolved} />
+      ) : decisions.length === 0 ? (
         <p
           style={{
             fontFamily: "var(--font-serif)",
@@ -62,6 +68,23 @@ export function DecisionsColumn({ decisions }: Props) {
         </div>
       )}
     </section>
+  );
+}
+
+function ToggleLink({ href, active, label }: { href: string; active: boolean; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="mono"
+      style={{
+        textDecoration: "none",
+        color: active ? "var(--accent)" : "var(--muted)",
+        borderBottom: active ? "1px solid var(--accent)" : "1px solid transparent",
+        paddingBottom: 2,
+      }}
+    >
+      {label}
+    </Link>
   );
 }
 
@@ -120,8 +143,7 @@ function ExpandedDecisionCard({ decision }: { decision: OpenDecisionData }) {
         </p>
       ) : null}
       <footer style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <button type="button" className="btn btn-primary">Abrir</button>
-        <button type="button" className="btn btn-ghost">Adiar</button>
+        <DecisionResolveButton decisionId={decision.id} />
       </footer>
     </article>
   );
@@ -147,5 +169,61 @@ function CompactDecisionRow({ decision }: { decision: OpenDecisionData }) {
         </span>
       ) : null}
     </div>
+  );
+}
+
+function ResolvedList({ resolved }: { resolved: ResolvedDecisionData[] }) {
+  if (resolved.length === 0) {
+    return (
+      <p
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontStyle: "italic",
+          color: "var(--muted)",
+          fontSize: 13,
+        }}
+      >
+        Nenhuma decisão resolvida nas últimas 24h.
+      </p>
+    );
+  }
+  const now = Date.now();
+  return (
+    <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+      {resolved.map((d) => {
+        const ago = formatSince(now - new Date(d.resolvedAt).getTime());
+        return (
+          <li
+            key={d.id}
+            className="card"
+            style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}
+          >
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--ink-2)",
+                  textDecoration: "line-through",
+                  textDecorationColor: "var(--muted)",
+                }}
+              >
+                {d.title}
+              </span>
+              <span className="mono" style={{ color: "var(--muted)" }}>
+                {ago}
+              </span>
+            </div>
+            {d.resolutionNote ? (
+              <p className="meta" style={{ margin: 0 }}>
+                {d.resolvedByName ? `${d.resolvedByName} · ` : ""}
+                {d.resolutionNote}
+              </p>
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
