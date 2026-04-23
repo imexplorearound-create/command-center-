@@ -45,7 +45,7 @@ export function TopNav({ userName, userEmail, maestroState = "ok" }: Props) {
       }}
     >
       <Link href="/" aria-label="Dashboard" style={{ textDecoration: "none", color: "inherit" }}>
-        <LogoMark size={16} />
+        <LogoMark size={22} />
       </Link>
 
       <TopNavLinks />
