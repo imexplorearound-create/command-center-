@@ -258,3 +258,9 @@
   box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 70%, transparent);
   background: color-mix(in oklch, var(--accent) 10%, var(--bg-2));
 }
+
+/* TV mode — read-only dashboard for a second monitor. Larger type + no chat.
+ * Route: /tv (outside (app) group; auto-refresh every 60s). */
+.portiqa-theme.tv {
+  font-size: calc(1em + 2px);
+}

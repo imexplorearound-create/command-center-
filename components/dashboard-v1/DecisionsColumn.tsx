@@ -9,30 +9,37 @@ type Props = {
   decisions: OpenDecisionData[];
   resolved?: ResolvedDecisionData[];
   viewing?: "open" | "resolved";
+  readOnly?: boolean;
 };
 
-export function DecisionsColumn({ decisions, resolved = [], viewing = "open" }: Props) {
+export function DecisionsColumn({ decisions, resolved = [], viewing = "open", readOnly = false }: Props) {
   const isResolved = viewing === "resolved";
   const expanded = decisions.slice(0, 3);
   const overflow = decisions.slice(3);
 
   return (
     <section>
-      <DecisionsHighlighter />
+      {readOnly ? null : <DecisionsHighlighter />}
       <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 8 }}>
         <Kicker>Decisões</Kicker>
-        <nav style={{ display: "flex", gap: 6 }} aria-label="vista das decisões">
-          <ToggleLink
-            href="/"
-            active={!isResolved}
-            label={isResolved ? "abertas" : `abertas · ${decisions.length}`}
-          />
-          <ToggleLink
-            href="/?decisions=resolved"
-            active={isResolved}
-            label={isResolved ? `resolvidas · ${resolved.length}` : "resolvidas"}
-          />
-        </nav>
+        {readOnly ? (
+          <span className="mono" style={{ color: "var(--muted)", fontSize: 11 }}>
+            abertas · {decisions.length}
+          </span>
+        ) : (
+          <nav style={{ display: "flex", gap: 6 }} aria-label="vista das decisões">
+            <ToggleLink
+              href="/"
+              active={!isResolved}
+              label={isResolved ? "abertas" : `abertas · ${decisions.length}`}
+            />
+            <ToggleLink
+              href="/?decisions=resolved"
+              active={isResolved}
+              label={isResolved ? `resolvidas · ${resolved.length}` : "resolvidas"}
+            />
+          </nav>
+        )}
       </header>
 
       {isResolved ? (
@@ -51,7 +58,7 @@ export function DecisionsColumn({ decisions, resolved = [], viewing = "open" }: 
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {expanded.map((d) => (
-            <ExpandedDecisionCard key={d.id} decision={d} />
+            <ExpandedDecisionCard key={d.id} decision={d} readOnly={readOnly} />
           ))}
           {overflow.length > 0 ? (
             <div
@@ -92,7 +99,7 @@ function ToggleLink({ href, active, label }: { href: string; active: boolean; la
   );
 }
 
-function ExpandedDecisionCard({ decision }: { decision: OpenDecisionData }) {
+function ExpandedDecisionCard({ decision, readOnly }: { decision: OpenDecisionData; readOnly: boolean }) {
   const color = SEVERITY_COLOR[decision.severity] ?? "var(--accent)";
   return (
     <article
@@ -146,9 +153,11 @@ function ExpandedDecisionCard({ decision }: { decision: OpenDecisionData }) {
           {decision.context}
         </p>
       ) : null}
-      <footer style={{ display: "flex", gap: 8, marginTop: 4 }}>
-        <DecisionResolveButton decisionId={decision.id} />
-      </footer>
+      {readOnly ? null : (
+        <footer style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <DecisionResolveButton decisionId={decision.id} />
+        </footer>
+      )}
     </article>
   );
 }
