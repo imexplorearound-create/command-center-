@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getTenantDb } from "@/lib/tenant";
 import { getAuthUser } from "@/lib/auth/dal";
 import { NewProjectButton } from "@/components/projects/new-project-button";
+import { PageHeader } from "@/components/layout/page-header";
 import { NOT_ARCHIVED } from "@/lib/queries";
 import type { Prisma } from "@prisma/client";
 
@@ -70,21 +71,29 @@ export default async function ProjectsPage({
   });
 
   const canCreate = user.role === "admin" || user.role === "manager";
+  const subtitleParts = [
+    `${projects.length} resultado${projects.length === 1 ? "" : "s"}`,
+    !includeArchived ? "só activos" : null,
+    healthFilter ? `health ${healthFilter}` : null,
+  ].filter(Boolean);
+
+  const inputStyle = {
+    padding: "8px 12px",
+    background: "var(--bg-3)",
+    border: "1px solid var(--line)",
+    borderRadius: "var(--radius-input)",
+    color: "var(--ink)",
+    fontFamily: "var(--font-sans)",
+    fontSize: 13,
+  } as const;
 
   return (
-    <div style={{ padding: 32, maxWidth: 1240, margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 600, margin: 0 }}>Projectos</h1>
-          <p style={{ color: "var(--muted)", margin: "6px 0 0", fontSize: 13 }}>
-            {projects.length} resultado{projects.length === 1 ? "" : "s"}
-            {!includeArchived ? " · só activos" : ""}
-            {healthFilter ? ` · health ${healthFilter}` : ""}
-          </p>
-        </div>
-        {canCreate ? <NewProjectButton /> : null}
-      </header>
-
+    <PageHeader
+      kicker="Projectos · Lista"
+      title="Projectos"
+      subtitle={subtitleParts.join(" · ")}
+      actions={canCreate ? <NewProjectButton /> : undefined}
+    >
       <form
         method="get"
         style={{
@@ -92,9 +101,9 @@ export default async function ProjectsPage({
           gap: 12,
           flexWrap: "wrap",
           padding: "12px 16px",
-          background: "var(--card)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
+          background: "var(--bg-2)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-card)",
           marginBottom: 20,
         }}
       >
@@ -102,73 +111,32 @@ export default async function ProjectsPage({
           name="q"
           defaultValue={q}
           placeholder="Procurar por nome ou descrição"
-          style={{
-            flex: 1,
-            minWidth: 200,
-            padding: "8px 12px",
-            background: "var(--bg-subtle)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text)",
-            fontFamily: "inherit",
-            fontSize: 13,
-          }}
+          style={{ ...inputStyle, flex: 1, minWidth: 200 }}
         />
-        <select
-          name="health"
-          defaultValue={healthFilter ?? ""}
-          style={{
-            padding: "8px 12px",
-            background: "var(--bg-subtle)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text)",
-            fontSize: 13,
-          }}
-        >
+        <select name="health" defaultValue={healthFilter ?? ""} style={inputStyle}>
           <option value="">Todos os health</option>
           <option value="ok">OK</option>
           <option value="warn">Warn</option>
           <option value="block">Block</option>
         </select>
-        <select
-          name="sort"
-          defaultValue={sort}
-          style={{
-            padding: "8px 12px",
-            background: "var(--bg-subtle)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            color: "var(--text)",
-            fontSize: 13,
-          }}
-        >
+        <select name="sort" defaultValue={sort} style={inputStyle}>
           <option value="updated">Actualizado</option>
           <option value="name">Nome</option>
         </select>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)" }}>
+        <label
+          className="mono"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, textTransform: "none" }}
+        >
           <input type="checkbox" name="include_archived" value="1" defaultChecked={includeArchived} />
           Incluir arquivados
         </label>
-        <button
-          type="submit"
-          style={{
-            padding: "8px 16px",
-            background: "var(--accent)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
+        <button type="submit" className="btn btn-primary">
           Filtrar
         </button>
       </form>
 
       {projects.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
+        <div className="card" style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
           Sem projectos que correspondam aos filtros.
         </div>
       ) : (
@@ -179,16 +147,14 @@ export default async function ProjectsPage({
               <li key={p.id}>
                 <Link
                   href={`/project/${p.slug}`}
+                  className="card"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "auto 1fr auto auto",
                     gap: 16,
                     alignItems: "center",
                     padding: "14px 18px",
-                    background: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderLeft: `4px solid ${color}`,
-                    borderRadius: 10,
+                    borderLeft: `3px solid ${color}`,
                     textDecoration: "none",
                     color: "inherit",
                   }}
@@ -205,9 +171,10 @@ export default async function ProjectsPage({
                   <div style={{ minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 15,
+                        fontFamily: "var(--font-serif)",
+                        fontSize: 16,
                         fontWeight: 600,
-                        color: "var(--text)",
+                        color: "var(--ink)",
                         display: "flex",
                         alignItems: "center",
                         gap: 8,
@@ -215,41 +182,26 @@ export default async function ProjectsPage({
                     >
                       {p.name}
                       {p.archivedAt ? (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 500,
-                            padding: "2px 7px",
-                            borderRadius: 4,
-                            background: "rgba(255,255,255,0.06)",
-                            color: "var(--muted)",
-                            textTransform: "uppercase",
-                            letterSpacing: "0.06em",
-                          }}
-                        >
+                        <span className="mono" style={{ color: "var(--muted)" }}>
                           arquivado
                         </span>
                       ) : null}
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+                    <div className="mono" style={{ textTransform: "none", marginTop: 3 }}>
                       {p.client?.companyName ? `${p.client.companyName} · ` : ""}
                       {p.status}
                       {p.description ? ` · ${p.description.slice(0, 80)}${p.description.length > 80 ? "…" : ""}` : ""}
                     </div>
                   </div>
-                  <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 60, textAlign: "right" }}>
+                  <span className="mono" style={{ textTransform: "none", minWidth: 60, textAlign: "right" }}>
                     {p.progress}%
                   </span>
                   <span
+                    className="pill"
                     style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      padding: "3px 9px",
-                      borderRadius: 4,
                       background: `color-mix(in oklch, ${color} 14%, transparent)`,
                       color,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
+                      borderColor: `color-mix(in oklch, ${color} 30%, transparent)`,
                     }}
                   >
                     {p.health}
@@ -260,6 +212,6 @@ export default async function ProjectsPage({
           })}
         </ul>
       )}
-    </div>
+    </PageHeader>
   );
 }
