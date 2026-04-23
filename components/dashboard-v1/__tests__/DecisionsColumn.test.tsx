@@ -37,6 +37,16 @@ const RESOLVED: ResolvedDecisionData = {
   resolvedAt: new Date().toISOString(),
   resolvedByName: "Miguel",
   resolutionNote: "Release ficou 'Phoenix'",
+  resolutionSource: "human",
+};
+
+const AUTO_RESOLVED: ResolvedDecisionData = {
+  ...RESOLVED,
+  id: "dec-auto",
+  title: "Oportunidade voltou a mexer",
+  resolvedByName: null,
+  resolutionNote: "Auto-resolvido: condição já não se verifica.",
+  resolutionSource: "auto",
 };
 
 describe("DecisionsColumn — readOnly mode", () => {
@@ -96,6 +106,18 @@ describe("DecisionsColumn — modo interactivo (default)", () => {
     render(<DecisionsColumn decisions={[]} resolved={[RESOLVED]} viewing="resolved" />);
     expect(screen.getByText(RESOLVED.title)).toBeTruthy();
     expect(screen.getByText(/Miguel/)).toBeTruthy();
+  });
+
+  it("decisão resolvida pelo humano NÃO mostra badge 'auto'", () => {
+    render(<DecisionsColumn decisions={[]} resolved={[RESOLVED]} viewing="resolved" />);
+    expect(screen.queryByText(/^auto$/)).toBeNull();
+  });
+
+  it("decisão auto-resolvida (Maestro) MOSTRA badge 'auto' (F3 Passo E)", () => {
+    render(<DecisionsColumn decisions={[]} resolved={[AUTO_RESOLVED]} viewing="resolved" />);
+    const badge = screen.getByText(/^auto$/);
+    expect(badge).toBeTruthy();
+    expect(badge.getAttribute("title")).toContain("automaticamente");
   });
 });
 

@@ -688,6 +688,10 @@ model Decision {
   resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
   resolvedById          String?   @map("resolved_by") @db.Uuid
   resolutionNote        String?   @map("resolution_note") @db.Text
+  // F3 Passo E: "auto" (recompute detectou sinal fora) | "human" (resolve
+  // manual) | null (legacy pre-F3). Permite feed "Resolvidas 24h" mostrar
+  // badge e analytics separarem ciclos automáticos de humanos.
+  resolutionSource      String?   @map("resolution_source") @db.VarChar(10)
   projectId             String?   @map("project_id") @db.Uuid
   opportunityId         String?   @map("opportunity_id") @db.Uuid
   taskId                String?   @map("task_id") @db.Uuid

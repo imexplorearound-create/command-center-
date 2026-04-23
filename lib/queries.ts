@@ -1370,6 +1370,7 @@ export async function getResolvedDecisions24h(): Promise<ResolvedDecisionData[]>
       dueAt: true,
       resolvedAt: true,
       resolutionNote: true,
+      resolutionSource: true,
       crewRole: { select: { slug: true } },
       resolvedBy: { select: { name: true } },
     },
@@ -1387,6 +1388,7 @@ export async function getResolvedDecisions24h(): Promise<ResolvedDecisionData[]>
     resolvedAt: r.resolvedAt!.toISOString(),
     resolvedByName: r.resolvedBy?.name ?? null,
     resolutionNote: r.resolutionNote,
+    resolutionSource: (r.resolutionSource ?? null) as "auto" | "human" | null,
   }));
 }
 

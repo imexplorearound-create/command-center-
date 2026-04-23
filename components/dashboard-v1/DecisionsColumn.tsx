@@ -249,9 +249,27 @@ function ResolvedList({ resolved }: { resolved: ResolvedDecisionData[] }) {
               >
                 {d.title}
               </span>
-              <span className="mono" style={{ color: "var(--muted)" }}>
-                {ago}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {d.resolutionSource === "auto" ? (
+                  <span
+                    className="mono"
+                    title="Resolvido automaticamente pelo Maestro"
+                    style={{
+                      fontSize: 9,
+                      padding: "1px 6px",
+                      borderRadius: 999,
+                      background: "color-mix(in oklch, var(--accent) 14%, transparent)",
+                      color: "var(--accent)",
+                      border: "1px solid color-mix(in oklch, var(--accent) 30%, transparent)",
+                    }}
+                  >
+                    auto
+                  </span>
+                ) : null}
+                <span className="mono" style={{ color: "var(--muted)" }}>
+                  {ago}
+                </span>
+              </div>
             </div>
             {d.resolutionNote ? (
               <p className="meta" style={{ margin: 0 }}>

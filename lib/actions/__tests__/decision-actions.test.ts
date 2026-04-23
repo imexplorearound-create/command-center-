@@ -131,7 +131,7 @@ describe("resolveDecision", () => {
     expect(r).toEqual({ error: "Sem permissão" });
   });
 
-  it("marca resolvedAt + resolvedById + nota", async () => {
+  it("marca resolvedAt + resolvedById + nota + resolutionSource='human'", async () => {
     mocks.decision.update.mockResolvedValue({});
     const fd = new FormData();
     fd.set("decisionId", VALID_UUID);
@@ -143,6 +143,7 @@ describe("resolveDecision", () => {
     expect(call.data.resolvedAt).toBeInstanceOf(Date);
     expect(call.data.resolvedById).toBe("person-1");
     expect(call.data.resolutionNote).toBe("Resolvido em call");
+    expect(call.data.resolutionSource).toBe("human");
   });
 
   it("rejeita decisionId inválido", async () => {
@@ -302,6 +303,7 @@ describe("recomputeDecisions", () => {
       data: {
         resolvedAt: expect.any(Date),
         resolutionNote: "Auto-resolvido: condição já não se verifica.",
+        resolutionSource: "auto",
       },
     });
   });

@@ -82,6 +82,7 @@ export async function resolveDecision(
       resolvedAt: new Date(),
       resolvedById: user?.personId ?? null,
       resolutionNote: parsed.data.resolutionNote ?? null,
+      resolutionSource: "human",
     },
   });
 
@@ -334,6 +335,7 @@ export async function recomputeDecisions(): Promise<
       data: {
         resolvedAt: new Date(),
         resolutionNote: "Auto-resolvido: condição já não se verifica.",
+        resolutionSource: "auto",
       },
     });
   }
