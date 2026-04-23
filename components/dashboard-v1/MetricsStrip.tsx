@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Card } from "@/components/cc/atoms";
 import { formatCurrency } from "@/lib/utils";
 import type { DevVelocityData, PipelineValueData } from "@/lib/types";
 
@@ -108,15 +109,10 @@ function MetricCard({
         display: "block",
       }}
     >
-      <div
-        className="card"
-        style={{
-          padding: 14,
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          borderTop: `2px solid ${color}`,
-        }}
+      <Card
+        topBorderColor={color}
+        padding={14}
+        style={{ display: "flex", flexDirection: "column", gap: 6 }}
       >
         <div className="kicker" style={{ fontSize: 9 }}>{label}</div>
         <div
@@ -130,10 +126,10 @@ function MetricCard({
         >
           {value}
         </div>
-        <div className="mono" style={{ color, textTransform: "none", fontSize: 10 }}>
+        <div className="meta" style={{ color, fontSize: 10 }}>
           {hint}
         </div>
-      </div>
+      </Card>
     </Link>
   );
 }

@@ -5,6 +5,7 @@ import { getAuthUser } from "@/lib/auth/dal";
 import { NewProjectButton } from "@/components/projects/new-project-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { NOT_ARCHIVED } from "@/lib/queries";
+import { HEALTH_COLOR } from "@/lib/dashboard-helpers";
 import type { Prisma } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -15,12 +16,6 @@ interface SearchParams {
   include_archived?: string;
   sort?: "name" | "updated";
 }
-
-const HEALTH_COLOR: Record<string, string> = {
-  ok: "var(--success, #2D8A5E)",
-  warn: "var(--warning, #D4883A)",
-  block: "var(--error, #C0392B)",
-};
 
 export default async function ProjectsPage({
   searchParams,
@@ -85,7 +80,7 @@ export default async function ProjectsPage({
     color: "var(--ink)",
     fontFamily: "var(--font-sans)",
     fontSize: 13,
-  } as const;
+  };
 
   return (
     <PageHeader
@@ -124,8 +119,8 @@ export default async function ProjectsPage({
           <option value="name">Nome</option>
         </select>
         <label
-          className="mono"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, textTransform: "none" }}
+          className="meta"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
         >
           <input type="checkbox" name="include_archived" value="1" defaultChecked={includeArchived} />
           Incluir arquivados
@@ -187,13 +182,13 @@ export default async function ProjectsPage({
                         </span>
                       ) : null}
                     </div>
-                    <div className="mono" style={{ textTransform: "none", marginTop: 3 }}>
+                    <div className="meta" style={{ marginTop: 3 }}>
                       {p.client?.companyName ? `${p.client.companyName} · ` : ""}
                       {p.status}
                       {p.description ? ` · ${p.description.slice(0, 80)}${p.description.length > 80 ? "…" : ""}` : ""}
                     </div>
                   </div>
-                  <span className="mono" style={{ textTransform: "none", minWidth: 60, textAlign: "right" }}>
+                  <span className="meta" style={{ minWidth: 60, textAlign: "right" }}>
                     {p.progress}%
                   </span>
                   <span

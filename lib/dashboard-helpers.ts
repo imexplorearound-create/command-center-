@@ -44,6 +44,13 @@ export const SEVERITY_COLOR: Record<"block" | "warn" | "pend", string> = {
   pend: "var(--accent, #B08A2C)",
 };
 
+/** Project health palette used by /projects list + ProjectsStrip. */
+export const HEALTH_COLOR: Record<string, string> = {
+  ok: "var(--success, #2D8A5E)",
+  warn: "var(--warning, #D4883A)",
+  block: "var(--error, #C0392B)",
+};
+
 /** Severity rank for sort order in decisions column (block > warn > pend). */
 export const DECISION_SEVERITY_RANK: Record<string, number> = {
   block: 3,
@@ -59,7 +66,7 @@ export const DECISION_SEVERITY_RANK: Record<string, number> = {
  *   - >= 24h     → "em Nd"
  */
 export function formatDeadline(
-  d: Date | null | undefined,
+  d: Date | null,
   nowMs: number = Date.now(),
 ): string | null {
   if (!d) return null;

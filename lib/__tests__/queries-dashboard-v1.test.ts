@@ -78,9 +78,8 @@ describe("mapAlertSeverity", () => {
 describe("formatDeadline", () => {
   const NOW = new Date("2026-04-23T12:00:00Z").getTime();
 
-  it("returns null when date is null/undefined", () => {
+  it("returns null when date is null", () => {
     expect(formatDeadline(null, NOW)).toBe(null);
-    expect(formatDeadline(undefined, NOW)).toBe(null);
   });
 
   it("returns 'atrasado' when date is in the past", () => {

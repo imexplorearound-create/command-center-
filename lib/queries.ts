@@ -1272,27 +1272,29 @@ export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> 
       snoozedUntil: true,
       crewRole: { select: { slug: true } },
     },
+    orderBy: { createdAt: "desc" },
     take: limit,
   });
 
-  return rows
-    .map((r) => ({
-      id: r.id,
-      title: r.title,
-      context: r.context ?? "",
-      deadline: formatDeadline(r.dueAt),
-      crewRoleSlug: (r.crewRole?.slug ?? null) as CrewRoleSlug | null,
-      severity: r.severity as AlertSeverity,
-      kind: r.kind as DecisionKind,
-      snoozedUntil: r.snoozedUntil?.toISOString() ?? null,
-    }))
-    .sort((a, b) => {
-      const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
-      if (sev !== 0) return sev;
-      const aDue = a.deadline === null ? Infinity : 0;
-      const bDue = b.deadline === null ? Infinity : 0;
-      return aDue - bDue;
-    });
+  rows.sort((a, b) => {
+    const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
+    if (sev !== 0) return sev;
+    if (!a.dueAt && !b.dueAt) return 0;
+    if (!a.dueAt) return 1;
+    if (!b.dueAt) return -1;
+    return a.dueAt.getTime() - b.dueAt.getTime();
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    context: r.context ?? "",
+    deadline: formatDeadline(r.dueAt),
+    crewRoleSlug: (r.crewRole?.slug ?? null) as CrewRoleSlug | null,
+    severity: r.severity as AlertSeverity,
+    kind: r.kind as DecisionKind,
+    snoozedUntil: r.snoozedUntil?.toISOString() ?? null,
+  }));
 }
 
 /**

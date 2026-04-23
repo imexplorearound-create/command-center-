@@ -1,14 +1,9 @@
 import Link from "next/link";
 import type { ProjectData } from "@/lib/types";
+import { HEALTH_COLOR } from "@/lib/dashboard-helpers";
 
 type Props = {
   projects: ProjectData[];
-};
-
-const HEALTH_COLOR: Record<string, string> = {
-  ok: "var(--success, #2D8A5E)",
-  warn: "var(--warning, #D4883A)",
-  block: "var(--error, #C0392B)",
 };
 
 export function ProjectsStrip({ projects }: Props) {
