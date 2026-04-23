@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/dal";
 import { getDictionary } from "@/lib/i18n";
 import { I18nProvider } from "@/lib/i18n/context";
+import { getTenantLocale } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export default async function TvLayout({
   const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const locale = user.tenantId ? (await getLocaleFromSession()) : "pt-PT";
+  const locale = user.tenantId ? await getTenantLocale() : "pt-PT";
   const dictionary = getDictionary(locale);
 
   return (
@@ -26,10 +27,4 @@ export default async function TvLayout({
       {children}
     </I18nProvider>
   );
-}
-
-async function getLocaleFromSession(): Promise<string> {
-  const { getSession } = await import("@/lib/auth/session");
-  const session = await getSession();
-  return session?.locale ?? "pt-PT";
 }
