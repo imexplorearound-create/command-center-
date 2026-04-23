@@ -4,6 +4,7 @@ import { SEVERITY_COLOR, formatSince } from "@/lib/dashboard-helpers";
 import type { OpenDecisionData, ResolvedDecisionData } from "@/lib/types";
 import { DecisionsHighlighter } from "./DecisionsHighlighter";
 import { DecisionResolveButton } from "./DecisionResolveButton";
+import { DecisionSnoozeButton } from "./DecisionSnoozeButton";
 
 type Props = {
   decisions: OpenDecisionData[];
@@ -177,8 +178,9 @@ function ExpandedDecisionCard({ decision, readOnly }: { decision: OpenDecisionDa
         </p>
       ) : null}
       {readOnly ? null : (
-        <footer style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <footer style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "flex-start" }}>
           <DecisionResolveButton decisionId={decision.id} />
+          <DecisionSnoozeButton decisionId={decision.id} />
         </footer>
       )}
     </article>
