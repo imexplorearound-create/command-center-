@@ -10,6 +10,8 @@ const TYPE_ICONS: Record<ExtractionType, { icon: string; bg: string }> = {
   prioridade: { icon: "🏷️", bg: "var(--yellow-glow)" },
   responsavel: { icon: "👤", bg: "rgba(139,92,246,0.12)" },
   conteudo: { icon: "🎬", bg: "var(--red-glow)" },
+  ligacao_codigo: { icon: "🔗", bg: "rgba(255,255,255,0.05)" },
+  feedback_teste: { icon: "🎤", bg: "rgba(55,138,221,0.12)" },
 };
 
 export async function ValidationPanel() {
@@ -45,7 +47,7 @@ export async function ValidationPanel() {
                 <div className="cc-validation-confidence" style={{ color: cc.color, background: cc.bg }}>
                   {pct}%
                 </div>
-                <ValidationActions itemId={item.id} title={item.title} />
+                <ValidationActions itemId={item.id} title={item.title} itemKind={item.kind} />
               </div>
             );
           })}

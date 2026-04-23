@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 import { resolveProjectSlug, toDateStr } from "@/lib/agent-helpers";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
 
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
+
   const status = request.nextUrl.searchParams.get("status");
 
-  const items = await prisma.contentItem.findMany({
+  const items = await db.contentItem.findMany({
     where: status ? { status } : undefined,
     include: {
       project: { select: { name: true, slug: true } },
@@ -43,6 +45,9 @@ export async function POST(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
 
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
+
   const body = await request.json();
   const { title, format, status, projectSlug, sourceCallDate, platform, scriptPath, videoPath } = body;
 
@@ -50,10 +55,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  const resolved = projectSlug ? await resolveProjectSlug(projectSlug) : null;
+  const resolved = projectSlug ? await resolveProjectSlug(db, projectSlug) : null;
 
-  const item = await prisma.contentItem.create({
+  const item = await db.contentItem.create({
     data: {
+      tenantId: "",
       title,
       format,
       status: status ?? "proposta",

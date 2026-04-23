@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { getSecretKey } from "./secret";
@@ -12,6 +13,8 @@ export interface SessionPayload {
   personId: string;
   email: string;
   role: Role;
+  tenantId: string;
+  locale: string;
 }
 
 export async function encrypt(payload: SessionPayload): Promise<string> {
@@ -43,12 +46,15 @@ export async function createSession(data: SessionPayload): Promise<void> {
   });
 }
 
-export async function getSession(): Promise<SessionPayload | null> {
+export const getSession = cache(async function getSessionUncached(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
-  return decrypt(token);
-}
+  const payload = await decrypt(token);
+  // Reject old tokens without tenantId (forces re-login)
+  if (payload && !payload.tenantId) return null;
+  return payload;
+});
 
 export async function deleteSession(): Promise<void> {
   const cookieStore = await cookies();

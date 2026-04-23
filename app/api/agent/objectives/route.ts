@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 
 export async function GET(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
 
-  const objectives = await prisma.objective.findMany({
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
+
+  const objectives = await db.objective.findMany({
     where: { status: "ativo" },
     include: {
       project: { select: { name: true, slug: true } },

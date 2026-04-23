@@ -2,7 +2,8 @@ export type Health = "green" | "yellow" | "red";
 export type Severity = "info" | "warning" | "critical";
 export type Priority = "critica" | "alta" | "media" | "baixa";
 export type ProjectType = "interno" | "cliente";
-export type TaskStatus = "backlog" | "a_fazer" | "em_curso" | "em_revisao" | "feito";
+import type { TaskStatusInput } from "@/lib/validation/task-schema";
+export type TaskStatus = TaskStatusInput;
 export type AlertType = "tarefa_atrasada" | "tarefa_sem_prazo" | "cliente_sem_contacto" | "objectivo_risco" | "aprovacao_pendente" | "sobrecarga" | "fase_sem_planeamento";
 
 export interface ProjectData {
@@ -69,19 +70,56 @@ export type DevStatus = "sem_codigo" | "em_desenvolvimento" | "em_review" | "mer
 export interface TaskData {
   id: string;
   title: string;
+  description?: string;
   status: TaskStatus;
   priority: Priority;
   assignee: string;
+  assigneeId?: string;
   assigneeColor: string;
+  phaseId?: string;
+  areaId?: string;
   origin?: string;
   deadline?: string;
   daysStale?: number;
   aiExtracted?: boolean;
   aiConfidence?: number;
+  validationStatus?: ValidationStatus;
   devStatus?: DevStatus;
   githubBranch?: string;
   githubPrNumber?: number;
   githubPrUrl?: string;
+}
+
+export interface PersonOption {
+  id: string;
+  name: string;
+  avatarColor: string;
+}
+
+export interface AreaOption {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface PersonInitial {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string | null;
+  type: string;
+  avatarColor: string | null;
+  githubUsername: string | null;
+}
+
+export interface AreaInitial {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  ownerId: string | null;
 }
 
 export interface GithubPR {
@@ -182,11 +220,15 @@ export interface InteractionData {
   body?: string;
   date: string;
   participants: string[];
+  participantIds: string[];
   source?: string;
   sourceRef?: string;
+  clientId: string;
+  projectId?: string;
 }
 
 export interface ClientData {
+  id: string;
   companyName: string;
   primaryContact: string;
   status: string;
@@ -197,10 +239,13 @@ export interface ClientData {
 }
 
 export type ValidationStatus = "por_confirmar" | "auto_confirmado" | "confirmado" | "editado" | "rejeitado";
-export type ExtractionType = "tarefa" | "decisao" | "resumo" | "prioridade" | "responsavel" | "conteudo";
+// Source of truth: lib/maestro/trust-rules.ts. Re-export para uso geral.
+import type { ExtractionType } from "./maestro/trust-rules";
+export type { ExtractionType };
 
 export interface ValidationItem {
   id: string;
+  kind: "task" | "feedback";
   type: ExtractionType;
   title: string;
   project: string;
@@ -229,6 +274,7 @@ export interface ContentItemData {
   platform?: string;
   approvedBy?: string;
   publishedAt?: string;
+  projectId?: string;
 }
 
 // ─── OKR Types ─────────────────────────────────────────────
@@ -270,6 +316,52 @@ export interface RoadmapItem {
   health?: Health;
 }
 
+// ─── Feedback Loop ─────────────────────────────────────────
+
+export type FeedbackSessionStatus = "processing" | "ready" | "reviewed" | "archived";
+export type FeedbackItemType = "voice_note" | "interaction_anomaly" | "navigation_issue";
+export type FeedbackClassification = "bug" | "suggestion" | "question" | "praise";
+export type FeedbackItemStatus = "pending" | "accepted" | "rejected" | "converted";
+
+export interface FeedbackSessionData {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectSlug: string;
+  testerName: string;
+  status: FeedbackSessionStatus;
+  startUrl?: string;
+  startedAt: string;
+  endedAt: string;
+  durationSeconds?: number;
+  pagesVisited: string[];
+  aiSummary?: string;
+  aiClassification?: { themes: string[]; modules: string[]; severity: string };
+  itemsCount: number;
+  items?: FeedbackItemData[];
+  createdAt: string;
+}
+
+export interface FeedbackItemData {
+  id: string;
+  sessionId: string;
+  type: FeedbackItemType;
+  classification?: FeedbackClassification;
+  module?: string;
+  priority?: string;
+  timestampMs?: number;
+  cursorPosition?: { x: number; y: number };
+  pageUrl?: string;
+  pageTitle?: string;
+  voiceAudioUrl?: string;
+  voiceTranscript?: string;
+  aiSummary?: string;
+  taskId?: string;
+  status: FeedbackItemStatus;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
 // ─── Project Detail ────────────────────────────────────────
 
 export interface ProjectDetail extends ProjectData {
@@ -283,4 +375,234 @@ export interface ProjectDetail extends ProjectData {
     deploys: GithubDeploy[];
     metrics: DevMetrics;
   };
+}
+
+// ─── CRM ────────────────────────────────────────────────────
+
+export type OpportunityStage = "contacto_inicial" | "qualificacao" | "proposta" | "negociacao" | "ganho" | "perdido";
+
+export interface OpportunityData {
+  id: string;
+  title: string;
+  stageId: OpportunityStage;
+  kanbanOrder: number;
+  value: number | null;
+  currency: string;
+  probability: number;
+  contactId: string | null;
+  contactName: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  ownerColor: string;
+  companyName: string | null;
+  companyNif: string | null;
+  expectedClose: string | null;
+  source: string | null;
+  daysInStage: number;
+  createdAt: string;
+}
+
+export interface OpportunityDetailData extends OpportunityData {
+  closedAt: string | null;
+  convertedProjectId: string | null;
+  activities: OpportunityActivityData[];
+}
+
+export interface OpportunityActivityData {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  scheduledAt: string | null;
+  completedAt: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+// ─── Timetracking ───────────────────────────────────────────
+
+export type TimeEntryStatus = "draft" | "submitted" | "approved" | "rejected";
+
+export interface TimeEntryData {
+  id: string;
+  personId: string;
+  personName: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  areaId: string | null;
+  date: string;
+  duration: number;
+  startTime: string | null;
+  endTime: string | null;
+  description: string | null;
+  isBillable: boolean;
+  status: TimeEntryStatus;
+  origin: string;
+}
+
+export interface WeekSummary {
+  days: { date: string; totalMinutes: number; entries: TimeEntryData[] }[];
+  weekTotal: number;
+  contractedHours: number;
+  billableMinutes: number;
+}
+
+// ─── Email Records ──────────────────────────────────────────
+
+export interface EmailRecordData {
+  id: string;
+  gmailId: string;
+  threadId: string | null;
+  subject: string;
+  from: string;
+  to: string[];
+  cc: string[];
+  snippet: string | null;
+  receivedAt: string;
+  direction: string;
+  isProcessed: boolean;
+  projectId: string | null;
+  projectName: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  personId: string | null;
+  personName: string | null;
+  opportunityId: string | null;
+  validationStatus: string;
+  categorizationMethod: string | null;
+}
+
+// ─── Investment Maps ────────────────────────────────────────
+
+export interface InvestmentRubricData {
+  id: string;
+  name: string;
+  budgetAllocated: number;
+  budgetExecuted: number;
+  executionPercent: number;
+  areaId: string | null;
+  areaName: string | null;
+  sortOrder: number;
+}
+
+export interface InvestmentMapData {
+  id: string;
+  projectId: string;
+  projectName: string;
+  totalBudget: number;
+  totalExecuted: number;
+  executionPercent: number;
+  fundingSource: string | null;
+  fundingPercentage: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  rubrics: InvestmentRubricData[];
+}
+
+export interface CrossDepartmentSummary {
+  areaId: string;
+  areaName: string;
+  totalAllocated: number;
+  totalExecuted: number;
+  executionPercent: number;
+  projectCount: number;
+}
+
+// ─── Dashboard v1 ───────────────────────────────────────────
+
+export type CrewRoleSlug = "pipeline" | "comms" | "ops" | "qa";
+export type CrewState = "live" | "pending" | "thinking" | "idle";
+export type ExecutorKind = "clawbot" | "claude-code" | "mcp" | "humano" | "manual";
+export type AlertSeverity = "block" | "warn" | "pend";
+
+export interface CrewRoleCardData {
+  roleId: string | null;
+  slug: CrewRoleSlug;
+  name: string;
+  description: string;
+  color: string;
+  glyphKey: string;
+  state: CrewState;
+  executor: {
+    id: string | null;
+    kind: ExecutorKind;
+    name: string;
+    note: string | null;
+  };
+  lastLine: string | null;
+  load: number;
+}
+
+export interface AutonomyData {
+  percent: number;
+  aiTasks: number;
+  totalTasks: number;
+  windowDays: number;
+}
+
+export interface ProjectAtRiskData {
+  id: string;
+  name: string;
+  slug: string;
+  health: "warn" | "block";
+  reason: string;
+}
+
+export type DecisionKind =
+  | "pipeline_stall"
+  | "client_reply"
+  | "bruno_block"
+  | "budget"
+  | "feedback_triage"
+  | "other";
+
+export interface OpenDecisionData {
+  id: string;
+  title: string;
+  context: string;
+  deadline: string | null;
+  crewRoleSlug: CrewRoleSlug | null;
+  severity: AlertSeverity;
+  kind?: DecisionKind;
+  snoozedUntil?: string | null;
+}
+
+export interface ResolvedDecisionData extends OpenDecisionData {
+  resolvedAt: string;
+  resolvedByName: string | null;
+  resolutionNote: string | null;
+}
+
+export interface PassiveAlertData {
+  id: string;
+  severity: AlertSeverity;
+  text: string;
+  crewRoleSlug: CrewRoleSlug | null;
+  href: string | null;
+}
+
+export interface DevVelocityData {
+  commits7d: number;
+  prsMerged7d: number;
+  commitsPrev7d: number;
+  prsPrev7d: number;
+}
+
+export interface PipelineValueData {
+  weightedValueCents: number;
+  openOpportunities: number;
+  currency: string;
+}
+
+export interface FeedEventData {
+  id: string;
+  time: Date;
+  crewRoleSlug: CrewRoleSlug | null;
+  executorKind: ExecutorKind | null;
+  executorName: string | null;
+  text: string;
+  pillKind: "decide" | "reve" | "feito" | null;
+  linkedDecisionId: string | null;
 }

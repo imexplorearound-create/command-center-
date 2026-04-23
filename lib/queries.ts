@@ -1,4 +1,4 @@
-import { prisma } from "./db";
+import { getTenantDb } from "./tenant";
 import type { Prisma } from "@prisma/client";
 import type { AuthUser } from "./auth/dal";
 import type {
@@ -25,7 +25,211 @@ import type {
   KeyResultData,
   RoadmapItem,
   OkrSnapshotData,
+  PersonOption,
+  AreaOption,
 } from "./types";
+
+// ─── Kanban / Form options ──────────────────────────────────
+
+export async function getKanbanOptions(): Promise<{
+  people: PersonOption[];
+  areas: AreaOption[];
+}> {
+  const db = await getTenantDb();
+  const [people, areas] = await Promise.all([
+    db.person.findMany({
+      where: { type: "equipa", archivedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, avatarColor: true },
+    }),
+    db.area.findMany({
+      where: { status: "ativo", archivedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, color: true },
+    }),
+  ]);
+
+  return {
+    people: people.map((p) => ({
+      id: p.id,
+      name: p.name,
+      avatarColor: p.avatarColor ?? "#888",
+    })),
+    areas: areas.map((a) => ({
+      id: a.id,
+      name: a.name,
+      color: a.color ?? "#888",
+    })),
+  };
+}
+
+// ─── People (lista admin) ───────────────────────────────────
+
+export interface PersonRow {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string | null;
+  type: string;
+  avatarColor: string;
+  githubUsername: string | null;
+  archivedAt: Date | null;
+  activeTaskCount: number;
+}
+
+export interface PeopleProjectGroup {
+  project: { id: string; name: string; slug: string; color: string };
+  people: PersonRow[];
+}
+
+export interface GroupedPeople {
+  internas: PersonRow[];
+  porProjeto: PeopleProjectGroup[];
+  semProjeto: PersonRow[];
+}
+
+export async function getPeople(): Promise<GroupedPeople> {
+  const db = await getTenantDb();
+  const people = await db.person.findMany({
+    orderBy: [{ archivedAt: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      type: true,
+      avatarColor: true,
+      githubUsername: true,
+      archivedAt: true,
+      _count: {
+        select: {
+          tasks: { where: { archivedAt: null, status: { not: "feito" } } },
+        },
+      },
+      clientContacts: {
+        select: {
+          client: {
+            select: {
+              project: {
+                select: { id: true, name: true, slug: true, color: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const internas: PersonRow[] = [];
+  const semProjeto: PersonRow[] = [];
+  const projectMap = new Map<string, PeopleProjectGroup>();
+
+  for (const p of people) {
+    const row: PersonRow = {
+      id: p.id,
+      name: p.name,
+      email: p.email,
+      role: p.role,
+      type: p.type,
+      avatarColor: p.avatarColor ?? "#888",
+      githubUsername: p.githubUsername,
+      archivedAt: p.archivedAt,
+      activeTaskCount: p._count.tasks,
+    };
+
+    if (p.type === "equipa") {
+      internas.push(row);
+      continue;
+    }
+
+    const projects = p.clientContacts.map((cc) => cc.client.project);
+    if (projects.length === 0) {
+      semProjeto.push(row);
+      continue;
+    }
+
+    const seen = new Set<string>();
+    for (const proj of projects) {
+      if (seen.has(proj.id)) continue;
+      seen.add(proj.id);
+
+      let bucket = projectMap.get(proj.id);
+      if (!bucket) {
+        bucket = {
+          project: {
+            id: proj.id,
+            name: proj.name,
+            slug: proj.slug,
+            color: proj.color ?? "#888",
+          },
+          people: [],
+        };
+        projectMap.set(proj.id, bucket);
+      }
+      bucket.people.push(row);
+    }
+  }
+
+  const porProjeto = Array.from(projectMap.values()).sort((a, b) =>
+    a.project.name.localeCompare(b.project.name)
+  );
+
+  return { internas, porProjeto, semProjeto };
+}
+
+// ─── Areas (lista admin) ────────────────────────────────────
+
+export interface AreaRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  color: string;
+  icon: string | null;
+  ownerName: string | null;
+  ownerId: string | null;
+  archivedAt: Date | null;
+  taskCount: number;
+  workflowTemplateCount: number;
+}
+
+export async function getAreas(): Promise<AreaRow[]> {
+  const db = await getTenantDb();
+  const areas = await db.area.findMany({
+    orderBy: [{ archivedAt: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      color: true,
+      icon: true,
+      ownerId: true,
+      archivedAt: true,
+      owner: { select: { name: true } },
+      _count: {
+        select: {
+          tasks: { where: { archivedAt: null } },
+          workflowTemplates: true,
+        },
+      },
+    },
+  });
+
+  return areas.map((a) => ({
+    id: a.id,
+    name: a.name,
+    slug: a.slug,
+    description: a.description,
+    color: a.color ?? "#888",
+    icon: a.icon,
+    ownerName: a.owner?.name ?? null,
+    ownerId: a.ownerId,
+    archivedAt: a.archivedAt,
+    taskCount: a._count.tasks,
+    workflowTemplateCount: a._count.workflowTemplates,
+  }));
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -43,6 +247,16 @@ function toDateStr(d: Date | null | undefined): string {
   return d ? d.toISOString().split("T")[0] : "";
 }
 
+/**
+ * Filtro reutilizável: exclui projectos arquivados (soft delete via archivedAt).
+ * Aplicar EXPLICITAMENTE nas queries que listam projectos. NÃO meter no
+ * projectFilter() porque ele é usado em relações nested (`{project: pFilter}`)
+ * onde adicionar archivedAt:null excluiria entidades com projectId=null.
+ * Excepção: getProjectBySlug deixa passar arquivados para URLs directas continuarem a funcionar.
+ */
+export const NOT_ARCHIVED: Prisma.ProjectWhereInput = { archivedAt: null };
+export const NOT_ARCHIVED_FEEDBACK_ITEM: Prisma.FeedbackItemWhereInput = { archivedAt: null };
+
 function projectFilter(user?: AuthUser | null): Prisma.ProjectWhereInput {
   if (!user || user.role === "admin") return {};
   if (user.role === "membro") {
@@ -55,11 +269,12 @@ function projectFilter(user?: AuthUser | null): Prisma.ProjectWhereInput {
 // ─── Dashboard ──────────────────────────────────────────────
 
 export async function getProjects(user?: AuthUser | null): Promise<ProjectData[]> {
-  const projects = await prisma.project.findMany({
-    where: projectFilter(user),
+  const db = await getTenantDb();
+  const projects = await db.project.findMany({
+    where: { ...NOT_ARCHIVED, ...projectFilter(user) },
     include: {
       phases: { where: { status: "em_curso" }, take: 1 },
-      tasks: { select: { status: true, deadline: true } },
+      tasks: { where: { archivedAt: null }, select: { status: true, deadline: true } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -89,12 +304,13 @@ export async function getProjects(user?: AuthUser | null): Promise<ProjectData[]
 }
 
 export async function getObjectives(user?: AuthUser | null): Promise<ObjectiveData[]> {
+  const db = await getTenantDb();
   const pFilter = projectFilter(user);
   const hasFilter = Object.keys(pFilter).length > 0;
-  const objectives = await prisma.objective.findMany({
+  const objectives = await db.objective.findMany({
     where: hasFilter ? { OR: [{ projectId: null }, { project: pFilter }] } : undefined,
     include: {
-      project: { select: { name: true, color: true, tasks: { select: { id: true, title: true, status: true, assignee: { select: { name: true } } }, take: 5 } } },
+      project: { select: { name: true, color: true, tasks: { where: { archivedAt: null }, select: { id: true, title: true, status: true, assignee: { select: { name: true } } }, take: 5 } } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -123,9 +339,10 @@ export async function getObjectives(user?: AuthUser | null): Promise<ObjectiveDa
 }
 
 export async function getAlerts(user?: AuthUser | null): Promise<AlertData[]> {
+  const db = await getTenantDb();
   const pFilter = projectFilter(user);
   const hasFilter = Object.keys(pFilter).length > 0;
-  const alerts = await prisma.alert.findMany({
+  const alerts = await db.alert.findMany({
     where: {
       isDismissed: false,
       ...(hasFilter ? { project: pFilter } : {}),
@@ -144,43 +361,46 @@ export async function getAlerts(user?: AuthUser | null): Promise<AlertData[]> {
 }
 
 export async function getStats(user?: AuthUser | null): Promise<StatsData> {
+  const db = await getTenantDb();
   const pFilter = projectFilter(user);
   const hasFilter = Object.keys(pFilter).length > 0;
-  const taskWhere: Prisma.TaskWhereInput = hasFilter ? { project: pFilter } : {};
+  const baseTaskWhere: Prisma.TaskWhereInput = hasFilter ? { project: pFilter } : {};
+  const taskWhere: Prisma.TaskWhereInput = { ...baseTaskWhere, archivedAt: null };
 
   const [totalTasks, overdueTasks, completedTasks, activeProjects] =
     await Promise.all([
-      prisma.task.count({ where: taskWhere }),
-      prisma.task.count({
+      db.task.count({ where: taskWhere }),
+      db.task.count({
         where: {
           ...taskWhere,
           deadline: { lt: new Date() },
           status: { not: "feito" },
         },
       }),
-      prisma.task.count({ where: { ...taskWhere, status: "feito" } }),
-      prisma.project.count({ where: { status: "ativo", ...pFilter } }),
+      db.task.count({ where: { ...taskWhere, status: "feito" } }),
+      db.project.count({ where: { status: "ativo", ...NOT_ARCHIVED, ...pFilter } }),
     ]);
 
   return { totalTasks, overdueTasks, completedTasks, activeProjects };
 }
 
 export async function getSatellites(): Promise<Record<string, SatelliteData>> {
+  const db = await getTenantDb();
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const [contentCount, callsCount, discordCount, githubCommits, githubPrsOpen] =
     await Promise.all([
-      prisma.contentItem.count({ where: { status: "pronto" } }),
-      prisma.interaction.count({
+      db.contentItem.count({ where: { status: "pronto" } }),
+      db.interaction.count({
         where: { type: "call", interactionDate: { gte: weekAgo } },
       }),
-      prisma.syncLog.count({
+      db.syncLog.count({
         where: { source: "discord", createdAt: { gte: weekAgo } },
       }),
-      prisma.githubEvent.count({
+      db.githubEvent.count({
         where: { eventType: "push", eventAt: { gte: weekAgo } },
       }),
-      prisma.githubEvent.count({
+      db.githubEvent.count({
         where: {
           eventType: "pull_request",
           action: { in: ["opened", "open", "ready_for_review"] },
@@ -205,17 +425,35 @@ export async function getSatellites(): Promise<Record<string, SatelliteData>> {
 // ─── Validation / Trust ─────────────────────────────────────
 
 export async function getValidationItems(): Promise<ValidationItem[]> {
-  const items = await prisma.task.findMany({
-    where: { validationStatus: "por_confirmar" },
-    include: {
-      project: { select: { name: true } },
-      assignee: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const db = await getTenantDb();
+  const [tasks, feedbackItems] = await Promise.all([
+    db.task.findMany({
+      where: { validationStatus: "por_confirmar", archivedAt: null },
+      include: {
+        project: { select: { name: true } },
+        assignee: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    db.feedbackItem.findMany({
+      where: {
+        ...NOT_ARCHIVED_FEEDBACK_ITEM,
+        classification: { not: null },
+        status: "pending",
+        taskId: null,
+      },
+      include: {
+        session: { include: { project: { select: { name: true } } } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    }),
+  ]);
 
-  return items.map((t) => ({
+  const taskItems: ValidationItem[] = tasks.map((t) => ({
     id: t.id,
+    kind: "task" as const,
     type: "tarefa" as const,
     title: t.title,
     project: t.project?.name ?? "—",
@@ -224,10 +462,26 @@ export async function getValidationItems(): Promise<ValidationItem[]> {
     source: t.origin ?? "—",
     sourceDate: toDateStr(t.originDate),
   }));
+
+  const feedbackValidation: ValidationItem[] = feedbackItems.map((fi) => ({
+    id: fi.id,
+    kind: "feedback" as const,
+    type: "feedback_teste" as const,
+    title: fi.aiSummary ?? fi.voiceTranscript?.slice(0, 80) ?? "Nota de voz",
+    project: fi.session.project.name,
+    confidence: 0.75,
+    suggestedAssignee: undefined,
+    source: `🎤 ${fi.session.testerName}`,
+    sourceDate: toDateStr(fi.createdAt),
+  }));
+
+  return [...taskItems, ...feedbackValidation];
 }
 
 export async function getTrustScores(): Promise<TrustScoreData[]> {
-  const scores = await prisma.trustScore.findMany({
+  const db = await getTenantDb();
+  const scores = await db.trustScore.findMany({
+    where: { agentId: "maestro-internal" },
     orderBy: { extractionType: "asc" },
   });
 
@@ -240,10 +494,93 @@ export async function getTrustScores(): Promise<TrustScoreData[]> {
   }));
 }
 
+// ─── Maestro: trust scores + recent actions ─────────────────
+
+export interface TrustScoreRow {
+  id: string;
+  agentId: string;
+  extractionType: string;
+  score: number;
+  confirmations: number;
+  edits: number;
+  rejections: number;
+  lastInteractionAt: Date | null;
+}
+
+export interface MaestroActionRow {
+  id: string;
+  agentId: string;
+  extractionType: string;
+  action: import("./maestro/trust-rules").ValidationAction;
+  entityType: string;
+  entityId: string;
+  scoreDelta: number;
+  scoreBefore: number;
+  scoreAfter: number;
+  performedByName: string | null;
+  createdAt: Date;
+}
+
+export async function getTrustScoresByAgent(agentId: string): Promise<TrustScoreRow[]> {
+  const db = await getTenantDb();
+  const scores = await db.trustScore.findMany({
+    where: { agentId },
+    orderBy: { extractionType: "asc" },
+  });
+  return scores.map((s) => ({
+    id: s.id,
+    agentId: s.agentId,
+    extractionType: s.extractionType,
+    score: s.score,
+    confirmations: s.totalConfirmations,
+    edits: s.totalEdits,
+    rejections: s.totalRejections,
+    lastInteractionAt: s.lastInteractionAt,
+  }));
+}
+
+export async function getAgentIds(): Promise<string[]> {
+  const db = await getTenantDb();
+  const rows = await db.trustScore.findMany({
+    distinct: ["agentId"],
+    select: { agentId: true },
+    orderBy: { agentId: "asc" },
+  });
+  return rows.map((r) => r.agentId);
+}
+
+export async function getRecentMaestroActions(
+  limit = 20,
+  agentId?: string
+): Promise<MaestroActionRow[]> {
+  const db = await getTenantDb();
+  const actions = await db.maestroAction.findMany({
+    where: agentId ? { agentId } : undefined,
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { performedBy: { select: { name: true } } },
+  });
+
+  return actions.map((a) => ({
+    id: a.id,
+    agentId: a.agentId,
+    extractionType: a.extractionType,
+    action: a.action as MaestroActionRow["action"],
+    entityType: a.entityType,
+    entityId: a.entityId,
+    scoreDelta: a.scoreDelta,
+    scoreBefore: a.scoreBefore,
+    scoreAfter: a.scoreAfter,
+    performedByName: a.performedBy?.name ?? null,
+    createdAt: a.createdAt,
+  }));
+}
+
 // ─── Content ────────────────────────────────────────────────
 
 export async function getContentItems(): Promise<ContentItemData[]> {
-  const items = await prisma.contentItem.findMany({
+  const db = await getTenantDb();
+  const items = await db.contentItem.findMany({
     include: { approvedBy: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -257,13 +594,24 @@ export async function getContentItems(): Promise<ContentItemData[]> {
     platform: c.platform ?? undefined,
     approvedBy: c.approvedBy?.name,
     publishedAt: c.publishedAt ? c.publishedAt.toISOString() : undefined,
+    projectId: c.projectId ?? undefined,
   }));
+}
+
+export async function getProjectsForContentSelect(): Promise<{ id: string; name: string }[]> {
+  const db = await getTenantDb();
+  return db.project.findMany({
+    where: { archivedAt: null },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 }
 
 // ─── Workflows ──────────────────────────────────────────────
 
 export async function getWorkflowTemplates(): Promise<WorkflowTemplateData[]> {
-  const templates = await prisma.workflowTemplate.findMany({
+  const db = await getTenantDb();
+  const templates = await db.workflowTemplate.findMany({
     include: {
       area: { select: { name: true, color: true, icon: true } },
       steps: { orderBy: { stepOrder: "asc" } },
@@ -297,7 +645,8 @@ export async function getWorkflowTemplates(): Promise<WorkflowTemplateData[]> {
 }
 
 export async function getWorkflowInstances(): Promise<WorkflowInstanceData[]> {
-  const instances = await prisma.workflowInstance.findMany({
+  const db = await getTenantDb();
+  const instances = await db.workflowInstance.findMany({
     where: { status: "em_curso" },
     include: {
       template: { select: { name: true } },
@@ -345,10 +694,11 @@ export async function getWorkflowInstances(): Promise<WorkflowInstanceData[]> {
 // ─── OKR ───────────────────────────────────────────────────
 
 export async function getOkrObjectives(user?: AuthUser | null): Promise<OkrObjectiveData[]> {
+  const db = await getTenantDb();
   const pFilter = projectFilter(user);
   const hasFilter = Object.keys(pFilter).length > 0;
 
-  const objectives = await prisma.objective.findMany({
+  const objectives = await db.objective.findMany({
     where: hasFilter ? { OR: [{ projectId: null }, { project: pFilter }] } : undefined,
     include: {
       project: { select: { name: true, slug: true, color: true } },
@@ -357,6 +707,7 @@ export async function getOkrObjectives(user?: AuthUser | null): Promise<OkrObjec
         orderBy: { krOrder: "asc" },
         include: {
           tasks: {
+            where: { archivedAt: null },
             select: {
               id: true,
               title: true,
@@ -431,16 +782,17 @@ export async function getOkrObjectives(user?: AuthUser | null): Promise<OkrObjec
 }
 
 export async function getRoadmapItems(user?: AuthUser | null): Promise<RoadmapItem[]> {
+  const db = await getTenantDb();
   const pFilter = projectFilter(user);
   const hasFilter = Object.keys(pFilter).length > 0;
 
   const [phases, objectives] = await Promise.all([
-    prisma.projectPhase.findMany({
+    db.projectPhase.findMany({
       where: hasFilter ? { project: pFilter } : undefined,
       include: { project: { select: { name: true, color: true } } },
       orderBy: [{ project: { name: "asc" } }, { phaseOrder: "asc" }],
     }),
-    prisma.objective.findMany({
+    db.objective.findMany({
       where: {
         deadline: { not: null },
         ...(hasFilter ? { OR: [{ projectId: null }, { project: pFilter }] } : {}),
@@ -514,7 +866,8 @@ export async function getOkrSnapshots(
   entityType: string,
   entityId: string
 ): Promise<OkrSnapshotData[]> {
-  const snapshots = await prisma.okrSnapshot.findMany({
+  const db = await getTenantDb();
+  const snapshots = await db.okrSnapshot.findMany({
     where: { entityType, entityId },
     orderBy: { snapshotDate: "asc" },
   });
@@ -532,21 +885,22 @@ export async function getGithubData(repoId: string): Promise<{
   deploys: GithubDeploy[];
   metrics: DevMetrics;
 } | null> {
+  const db = await getTenantDb();
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   const [prEvents, commitEvents, deployEvents, dailyMetrics] =
     await Promise.all([
-      prisma.githubEvent.findMany({
+      db.githubEvent.findMany({
         where: { repoId, eventType: "pull_request" },
         orderBy: { eventAt: "desc" },
         take: 20,
       }),
-      prisma.githubEvent.findMany({
+      db.githubEvent.findMany({
         where: { repoId, eventType: "push", commitSha: { not: null } },
         orderBy: { eventAt: "desc" },
         take: 20,
       }),
-      prisma.githubEvent.findMany({
+      db.githubEvent.findMany({
         where: {
           repoId,
           eventType: { in: ["deploy", "workflow_run"] },
@@ -554,7 +908,7 @@ export async function getGithubData(repoId: string): Promise<{
         orderBy: { eventAt: "desc" },
         take: 10,
       }),
-      prisma.devMetricsDaily.findMany({
+      db.devMetricsDaily.findMany({
         where: { repoId, date: { gte: thirtyDaysAgo } },
         orderBy: { date: "asc" },
       }),
@@ -639,13 +993,15 @@ export async function getGithubData(repoId: string): Promise<{
 // ─── Project Detail ─────────────────────────────────────────
 
 export async function getProjectBySlug(slug: string): Promise<ProjectDetail | null> {
-  const p = await prisma.project.findUnique({
+  const db = await getTenantDb();
+  const p = await db.project.findFirst({
     where: { slug },
     include: {
       phases: { orderBy: { phaseOrder: "asc" } },
       tasks: {
+        where: { archivedAt: null },
         include: { assignee: { select: { name: true, avatarColor: true } } },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ status: "asc" }, { kanbanOrder: "asc" }],
       },
       client: {
         include: {
@@ -673,15 +1029,20 @@ export async function getProjectBySlug(slug: string): Promise<ProjectDetail | nu
   const tasks: TaskData[] = p.tasks.map((t) => ({
     id: t.id,
     title: t.title,
+    description: t.description ?? undefined,
     status: t.status as TaskData["status"],
     priority: t.priority as TaskData["priority"],
     assignee: t.assignee?.name ?? "—",
+    assigneeId: t.assigneeId ?? undefined,
     assigneeColor: t.assignee?.avatarColor ?? "#888",
+    phaseId: t.phaseId ?? undefined,
+    areaId: t.areaId ?? undefined,
     origin: t.origin ?? undefined,
     deadline: t.deadline ? toDateStr(t.deadline) : undefined,
     daysStale: t.daysStale,
     aiExtracted: t.aiExtracted,
     aiConfidence: t.aiConfidence ? Number(t.aiConfidence) : undefined,
+    validationStatus: t.validationStatus as TaskData["validationStatus"],
     devStatus: (t.devStatus as TaskData["devStatus"]) ?? undefined,
     githubBranch: t.githubBranch ?? undefined,
     githubPrNumber: t.githubPrNumber ?? undefined,
@@ -704,7 +1065,18 @@ export async function getProjectBySlug(slug: string): Promise<ProjectDetail | nu
       .filter((t) => t.status !== "feito")
       .slice(0, 5);
 
+    // Resolve participant UUIDs to names
+    const allParticipantIds = [...new Set(p.interactions.flatMap((i) => i.participants))];
+    const participantPersons = allParticipantIds.length > 0
+      ? await db.person.findMany({
+          where: { id: { in: allParticipantIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameMap = new Map(participantPersons.map((p) => [p.id, p.name]));
+
     clientData = {
+      id: p.client.id,
       companyName: p.client.companyName,
       primaryContact: primaryContact?.person.name ?? "—",
       status: p.client.status,
@@ -726,8 +1098,12 @@ export async function getProjectBySlug(slug: string): Promise<ProjectDetail | nu
         title: i.title,
         body: i.body ?? undefined,
         date: i.interactionDate.toISOString(),
-        participants: i.participants,
+        participants: i.participants.map((pid) => nameMap.get(pid) ?? pid),
+        participantIds: i.participants,
         source: i.source ?? undefined,
+        sourceRef: i.sourceRef ?? undefined,
+        clientId: i.clientId ?? "",
+        projectId: i.projectId ?? undefined,
       })),
     };
   }
@@ -755,4 +1131,561 @@ export async function getProjectBySlug(slug: string): Promise<ProjectDetail | nu
     repo: githubRepo?.repoFullName,
     github: github ?? undefined,
   };
+}
+
+// ─── Dashboard v1 · queries ──────────────────────────────────
+
+import type {
+  CrewRoleCardData,
+  AutonomyData,
+  ProjectAtRiskData,
+  OpenDecisionData,
+  ResolvedDecisionData,
+  DecisionKind,
+  AlertSeverity,
+  PassiveAlertData,
+  DevVelocityData,
+  PipelineValueData,
+  FeedEventData,
+  CrewRoleSlug,
+  ExecutorKind,
+} from "./types";
+import {
+  AUTONOMY_WINDOW_DAYS,
+  FEED_DEFAULT_WINDOW_MINUTES,
+  calcAutonomyPercent,
+  classifyBudgetAlert,
+  mapAlertSeverity,
+  formatDeadline,
+  DECISION_SEVERITY_RANK,
+  CREW_LIVE_MS,
+  computeCrewState,
+  computeCrewLoad,
+  formatSince,
+} from "./dashboard-helpers";
+import { narrateAlert } from "./maestro/alert-narrator";
+
+export async function getCrew(): Promise<CrewRoleCardData[]> {
+  const db = await getTenantDb();
+  const now = Date.now();
+  const since = new Date(now - CREW_LIVE_MS);
+
+  const [roles, openDecisions, recentActions] = await Promise.all([
+    db.crewRole.findMany({
+      orderBy: { order: "asc" },
+      include: {
+        executors: {
+          where: { archivedAt: null },
+          orderBy: { isPrimary: "desc" },
+        },
+      },
+    }),
+    db.decision.findMany({
+      where: {
+        resolvedAt: null,
+        crewRoleId: { not: null },
+        OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: new Date(now) } }],
+      },
+      select: { crewRoleId: true },
+    }),
+    db.maestroAction.findMany({
+      where: { crewRoleId: { not: null }, createdAt: { gte: since } },
+      select: { crewRoleId: true, createdAt: true, extractionType: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const pendingByRole = new Map<string, number>();
+  for (const d of openDecisions) {
+    if (!d.crewRoleId) continue;
+    pendingByRole.set(d.crewRoleId, (pendingByRole.get(d.crewRoleId) ?? 0) + 1);
+  }
+
+  const lastActionByRole = new Map<string, { at: Date; type: string }>();
+  for (const a of recentActions) {
+    if (!a.crewRoleId || lastActionByRole.has(a.crewRoleId)) continue;
+    lastActionByRole.set(a.crewRoleId, { at: a.createdAt, type: a.extractionType });
+  }
+
+  return roles.map((r) => {
+    const primary = r.executors.find((e) => e.isPrimary) ?? r.executors[0];
+    const pending = pendingByRole.get(r.id) ?? 0;
+    const last = lastActionByRole.get(r.id);
+    const msSince = last ? now - last.at.getTime() : null;
+    const state = computeCrewState(msSince, pending);
+    const lastLine =
+      last && msSince !== null ? `${last.type} · ${formatSince(msSince)}` : null;
+    return {
+      roleId: r.id,
+      slug: r.slug as CrewRoleSlug,
+      name: r.name,
+      description: r.description ?? "",
+      color: r.color,
+      glyphKey: r.glyphKey,
+      state,
+      executor: {
+        id: primary?.id ?? null,
+        kind: (primary?.kind ?? "manual") as ExecutorKind,
+        name: primary?.name ?? "—",
+        note: primary?.note ?? null,
+      },
+      lastLine,
+      load: computeCrewLoad(pending),
+    };
+  });
+}
+
+/**
+ * Autonomy % over the last 7 days.
+ * Ratio of AI-proposed tasks that were accepted (`confirmed` or
+ * `auto_confirmado`) vs. all tasks created in the window.
+ */
+export async function getAutonomy7d(): Promise<AutonomyData> {
+  const db = await getTenantDb();
+  const since = new Date(Date.now() - AUTONOMY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const where: Prisma.TaskWhereInput = { createdAt: { gte: since }, archivedAt: null };
+
+  const [totalTasks, aiTasks] = await Promise.all([
+    db.task.count({ where }),
+    db.task.count({
+      where: {
+        ...where,
+        aiExtracted: true,
+        validationStatus: { in: ["confirmed", "auto_confirmado"] },
+      },
+    }),
+  ]);
+
+  return {
+    percent: calcAutonomyPercent(aiTasks, totalTasks),
+    aiTasks,
+    totalTasks,
+    windowDays: AUTONOMY_WINDOW_DAYS,
+  };
+}
+
+/**
+ * Projects currently in `warn` or `block` health, ordered by severity then
+ * most recently updated.
+ */
+export async function getProjectsAtRisk(): Promise<ProjectAtRiskData[]> {
+  const db = await getTenantDb();
+  const projects = await db.project.findMany({
+    where: {
+      ...NOT_ARCHIVED,
+      status: "ativo",
+      health: { in: ["warn", "block"] },
+    },
+    select: { id: true, name: true, slug: true, health: true, description: true, updatedAt: true },
+    orderBy: [{ health: "desc" }, { updatedAt: "desc" }],
+    take: 10,
+  });
+
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    health: p.health as "warn" | "block",
+    reason: p.description ?? "sem contexto",
+  }));
+}
+
+/**
+ * Open decisions for the right-hand column — only the ones currently
+ * actionable (not resolved, not snoozed into the future).
+ */
+export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> {
+  const db = await getTenantDb();
+  const now = new Date();
+  const rows = await db.decision.findMany({
+    where: {
+      resolvedAt: null,
+      OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: now } }],
+    },
+    select: {
+      id: true,
+      title: true,
+      context: true,
+      kind: true,
+      severity: true,
+      dueAt: true,
+      snoozedUntil: true,
+      crewRole: { select: { slug: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+
+  rows.sort((a, b) => {
+    const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
+    if (sev !== 0) return sev;
+    if (!a.dueAt && !b.dueAt) return 0;
+    if (!a.dueAt) return 1;
+    if (!b.dueAt) return -1;
+    return a.dueAt.getTime() - b.dueAt.getTime();
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    context: r.context ?? "",
+    deadline: formatDeadline(r.dueAt),
+    crewRoleSlug: (r.crewRole?.slug ?? null) as CrewRoleSlug | null,
+    severity: r.severity as AlertSeverity,
+    kind: r.kind as DecisionKind,
+    snoozedUntil: r.snoozedUntil?.toISOString() ?? null,
+  }));
+}
+
+/**
+ * Decisions resolved in the last 24h — feeds the "Resolvidas · 24h"
+ * toggle sub-view on the decisions column (Passo F).
+ */
+export async function getResolvedDecisions24h(): Promise<ResolvedDecisionData[]> {
+  const db = await getTenantDb();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db.decision.findMany({
+    where: { resolvedAt: { gte: since } },
+    select: {
+      id: true,
+      title: true,
+      context: true,
+      kind: true,
+      severity: true,
+      dueAt: true,
+      resolvedAt: true,
+      resolutionNote: true,
+      crewRole: { select: { slug: true } },
+      resolvedBy: { select: { name: true } },
+    },
+    orderBy: { resolvedAt: "desc" },
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    context: r.context ?? "",
+    deadline: formatDeadline(r.dueAt),
+    crewRoleSlug: (r.crewRole?.slug ?? null) as CrewRoleSlug | null,
+    severity: r.severity as AlertSeverity,
+    kind: r.kind as DecisionKind,
+    resolvedAt: r.resolvedAt!.toISOString(),
+    resolvedByName: r.resolvedBy?.name ?? null,
+    resolutionNote: r.resolutionNote,
+  }));
+}
+
+/**
+ * Count of feedback items awaiting triage (pending + not archived).
+ */
+export async function getPendingFeedback(): Promise<number> {
+  const db = await getTenantDb();
+  return db.feedbackItem.count({
+    where: {
+      ...NOT_ARCHIVED_FEEDBACK_ITEM,
+      status: "pending",
+    },
+  });
+}
+
+/**
+ * GitHub-based dev velocity for the Dashboard metrics strip.
+ * Commits + PRs merged in the last 7d vs the previous 7d.
+ */
+export async function getDevVelocity(): Promise<DevVelocityData> {
+  const db = await getTenantDb();
+  const now = Date.now();
+  const d7 = 7 * 24 * 60 * 60 * 1000;
+  const since7 = new Date(now - d7);
+  const since14 = new Date(now - 2 * d7);
+
+  const [commits7d, commitsPrev7d, prsMerged7d, prsPrev7d] = await Promise.all([
+    db.githubEvent.count({
+      where: { eventType: "push", eventAt: { gte: since7 } },
+    }),
+    db.githubEvent.count({
+      where: { eventType: "push", eventAt: { gte: since14, lt: since7 } },
+    }),
+    db.githubEvent.count({
+      where: {
+        eventType: "pull_request",
+        action: "closed",
+        eventAt: { gte: since7 },
+      },
+    }),
+    db.githubEvent.count({
+      where: {
+        eventType: "pull_request",
+        action: "closed",
+        eventAt: { gte: since14, lt: since7 },
+      },
+    }),
+  ]);
+
+  return { commits7d, prsMerged7d, commitsPrev7d, prsPrev7d };
+}
+
+/**
+ * Pipeline value: sum(value × probability) over open, non-archived opps.
+ * Returned in cents so callers decide formatting.
+ */
+export async function getPipelineValue(): Promise<PipelineValueData> {
+  const db = await getTenantDb();
+  const opps = await db.opportunity.findMany({
+    where: {
+      archivedAt: null,
+      closedAt: null,
+      value: { not: null },
+    },
+    select: { value: true, probability: true, currency: true },
+  });
+
+  let totalCents = 0;
+  let currency = "EUR";
+  for (const o of opps) {
+    const euros = Number(o.value);
+    const prob = o.probability / 100;
+    totalCents += Math.round(euros * 100 * prob);
+    currency = o.currency ?? currency;
+  }
+
+  return {
+    weightedValueCents: totalCents,
+    openOpportunities: opps.length,
+    currency,
+  };
+}
+
+/**
+ * Passive alerts for the right-hand column. Combines:
+ *  - existing `Alert` rows (mapped to 3-level severity)
+ *  - automatic budget alerts: projects whose InvestmentMap exceeds 90%
+ *    (warn) / 100% (block) execution — replaces the removed
+ *    `InvestmentSummaryCard` from the legacy dashboard.
+ */
+export async function getPassiveAlerts(): Promise<PassiveAlertData[]> {
+  const db = await getTenantDb();
+  const now = Date.now();
+  const DAY = 24 * 60 * 60 * 1000;
+  const HOUR = 60 * 60 * 1000;
+
+  const [alerts, maps, staleOpps, staleAITasks, blockedProjects] = await Promise.all([
+    db.alert.findMany({
+      where: { isDismissed: false },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        severity: true,
+        title: true,
+        description: true,
+        project: { select: { slug: true } },
+      },
+    }),
+    db.investmentMap.findMany({
+      where: { archivedAt: null },
+      select: {
+        id: true,
+        projectId: true,
+        project: { select: { name: true, slug: true } },
+        rubrics: { select: { budgetAllocated: true, budgetExecuted: true } },
+      },
+    }),
+    db.opportunity.findMany({
+      where: {
+        archivedAt: null,
+        closedAt: null,
+        stageEnteredAt: { lt: new Date(now - 14 * DAY) },
+      },
+      select: { id: true, title: true, stageEnteredAt: true },
+    }),
+    db.task.findMany({
+      where: {
+        archivedAt: null,
+        aiExtracted: true,
+        validationStatus: "por_confirmar",
+        createdAt: { lt: new Date(now - 48 * HOUR) },
+      },
+      select: { id: true, title: true, createdAt: true, project: { select: { slug: true } } },
+    }),
+    db.project.findMany({
+      where: { archivedAt: null, health: "block" },
+      select: { id: true, name: true, slug: true },
+    }),
+  ]);
+
+  const result: PassiveAlertData[] = [];
+
+  for (const a of alerts) {
+    result.push({
+      id: `alert:${a.id}`,
+      severity: mapAlertSeverity(a.severity),
+      text: a.description ? `${a.title} · ${a.description}` : a.title,
+      crewRoleSlug: null,
+      href: a.project?.slug ? `/project/${a.project.slug}` : null,
+    });
+  }
+
+  for (const m of maps) {
+    const { allocated, executed } = m.rubrics.reduce(
+      (acc, r) => ({
+        allocated: acc.allocated + Number(r.budgetAllocated ?? 0),
+        executed: acc.executed + Number(r.budgetExecuted ?? 0),
+      }),
+      { allocated: 0, executed: 0 },
+    );
+    const severity = classifyBudgetAlert(executed, allocated);
+    if (!severity) continue;
+
+    const pct = Math.round((executed / allocated) * 100);
+    result.push({
+      id: `budget:${m.id}`,
+      severity,
+      text: narrateAlert(severity === "block" ? "budget_block" : "budget_warn", {
+        project: m.project?.name ?? "Projecto",
+        pct,
+      }),
+      crewRoleSlug: null,
+      href: m.project?.slug ? `/project/${m.project.slug}` : null,
+    });
+  }
+
+  for (const o of staleOpps) {
+    const days = Math.floor((now - o.stageEnteredAt.getTime()) / DAY);
+    result.push({
+      id: `opp-inactive:${o.id}`,
+      severity: "warn",
+      text: narrateAlert("opp_inactive", { title: o.title, days }),
+      crewRoleSlug: "pipeline",
+      href: "/crm",
+    });
+  }
+
+  for (const t of staleAITasks) {
+    const hours = Math.floor((now - t.createdAt.getTime()) / HOUR);
+    result.push({
+      id: `task-unvalidated:${t.id}`,
+      severity: "pend",
+      text: narrateAlert("task_validation_stale", { title: t.title, hours }),
+      crewRoleSlug: "qa",
+      href: t.project?.slug ? `/project/${t.project.slug}` : null,
+    });
+  }
+
+  for (const p of blockedProjects) {
+    result.push({
+      id: `project-block:${p.id}`,
+      severity: "block",
+      text: narrateAlert("project_health_block", { project: p.name }),
+      crewRoleSlug: "ops",
+      href: `/project/${p.slug}`,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Feed events (last N minutes) for the central "Fluxo da manhã" stream.
+ * Combines MaestroAction + Alert + resolved decisions <24h. Pills:
+ *   - decide/revê → action has an open decision via sourceMaestroActionId
+ *   - feito → decision resolved in the last 24h (persists in feed as signal)
+ */
+export async function getFeedEvents(
+  windowMinutes: number = FEED_DEFAULT_WINDOW_MINUTES,
+): Promise<FeedEventData[]> {
+  const db = await getTenantDb();
+  const now = Date.now();
+  const since = new Date(now - windowMinutes * 60 * 1000);
+  const since24h = new Date(now - 24 * 60 * 60 * 1000);
+
+  const [actions, alerts, openDecisions, resolvedDecisions] = await Promise.all([
+    db.maestroAction.findMany({
+      where: { createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      select: {
+        id: true,
+        createdAt: true,
+        agentId: true,
+        entityType: true,
+        action: true,
+        crewRole: { select: { slug: true } },
+        executor: { select: { kind: true, name: true } },
+      },
+    }),
+    db.alert.findMany({
+      where: { createdAt: { gte: since }, isDismissed: false },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { id: true, createdAt: true, title: true, type: true },
+    }),
+    db.decision.findMany({
+      where: {
+        resolvedAt: null,
+        sourceMaestroActionId: { not: null },
+        OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: new Date(now) } }],
+      },
+      select: { id: true, sourceMaestroActionId: true, severity: true },
+      take: 200,
+    }),
+    db.decision.findMany({
+      where: { resolvedAt: { gte: since24h } },
+      orderBy: { resolvedAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        title: true,
+        resolvedAt: true,
+        crewRole: { select: { slug: true } },
+      },
+    }),
+  ]);
+
+  const openBySourceAction = new Map<string, { id: string; severity: string }>();
+  for (const d of openDecisions) {
+    if (d.sourceMaestroActionId) {
+      openBySourceAction.set(d.sourceMaestroActionId, { id: d.id, severity: d.severity });
+    }
+  }
+
+  const fromActions: FeedEventData[] = actions.map((a) => {
+    const linked = openBySourceAction.get(a.id);
+    return {
+      id: `action:${a.id}`,
+      time: a.createdAt,
+      crewRoleSlug: (a.crewRole?.slug ?? null) as FeedEventData["crewRoleSlug"],
+      executorKind: (a.executor?.kind ?? null) as FeedEventData["executorKind"],
+      executorName: a.executor?.name ?? a.agentId,
+      text: `${a.action} · ${a.entityType}`,
+      pillKind: linked ? (linked.severity === "block" ? "decide" : "reve") : null,
+      linkedDecisionId: linked?.id ?? null,
+    };
+  });
+
+  const fromAlerts: FeedEventData[] = alerts.map((a) => ({
+    id: `alert:${a.id}`,
+    time: a.createdAt,
+    crewRoleSlug: null,
+    executorKind: null,
+    executorName: null,
+    text: a.title,
+    pillKind: null,
+    linkedDecisionId: null,
+  }));
+
+  const fromResolved: FeedEventData[] = resolvedDecisions.map((d) => ({
+    id: `decision-resolved:${d.id}`,
+    time: d.resolvedAt!,
+    crewRoleSlug: (d.crewRole?.slug ?? null) as FeedEventData["crewRoleSlug"],
+    executorKind: null,
+    executorName: null,
+    text: `resolvido · ${d.title}`,
+    pillKind: "feito",
+    linkedDecisionId: d.id,
+  }));
+
+  return [...fromActions, ...fromAlerts, ...fromResolved].sort(
+    (a, b) => b.time.getTime() - a.time.getTime(),
+  );
 }

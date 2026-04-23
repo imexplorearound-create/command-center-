@@ -1,46 +1,68 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { healthLabel, healthColor, priorityColor, formatMonth, formatDate, formatDateShort, timeAgo, progressColor } from "@/lib/utils";
-import type { TaskData, TaskStatus, DevStatus, ProjectDetail, GithubPR, DevMetrics } from "@/lib/types";
+import { healthLabel, healthColor, formatMonth, formatDate, timeAgo, progressColor } from "@/lib/utils";
+import type { ProjectDetail, GithubPR, DevMetrics, PersonOption, AreaOption } from "@/lib/types";
+import { EditProjectButton } from "@/components/projects/edit-project-button";
+import { ArchiveProjectButton } from "@/components/projects/archive-project-button";
+import { PhaseListEditable } from "@/components/phases/phase-list-editable";
+import { KanbanBoard } from "@/components/kanban/kanban-board";
+import { TaskFilters } from "@/components/kanban/task-filters";
+import type { ProjectStatus } from "@/lib/validation/project-schema";
 
-const KANBAN_COLUMNS: { key: TaskStatus; label: string }[] = [
-  { key: "backlog", label: "Backlog" },
-  { key: "a_fazer", label: "A Fazer" },
-  { key: "em_curso", label: "Em Curso" },
-  { key: "em_revisao", label: "Em Revisão" },
-  { key: "feito", label: "Feito" },
-];
+type TabKey = "kanban" | "timeline" | "dev";
 
-const DEV_STATUS_CONFIG: Record<DevStatus, { icon: string; label: (t: TaskData) => string; color: string } | null> = {
-  sem_codigo: null,
-  em_desenvolvimento: { icon: "🔨", label: (t) => `branch: ${t.githubBranch ?? "—"}`, color: "var(--accent)" },
-  em_review: { icon: "⚙️", label: (t) => `PR #${t.githubPrNumber ?? "?"} — Em review`, color: "var(--yellow)" },
-  merged: { icon: "✅", label: (t) => `PR #${t.githubPrNumber ?? "?"} — Merged`, color: "var(--green)" },
-  deployed: { icon: "🚀", label: () => "Deployed", color: "#0d9488" },
-};
+interface ProjectViewProps {
+  project: ProjectDetail;
+  slug: string;
+  canEdit?: boolean;
+  canWrite?: boolean;
+  initialTab?: TabKey;
+  people: PersonOption[];
+  areas: AreaOption[];
+  filters: { assignee?: string; priority?: string; origin?: string };
+  origins: string[];
+}
 
-export function ProjectView({ project, slug }: { project: ProjectDetail; slug: string }) {
-  const [tab, setTab] = useState<"kanban" | "timeline" | "dev">("kanban");
-
-  const grouped = useMemo(() => {
-    const map = new Map<TaskStatus, TaskData[]>();
-    for (const t of project.tasks) {
-      const arr = map.get(t.status) ?? [];
-      arr.push(t);
-      map.set(t.status, arr);
-    }
-    return map;
-  }, [project.tasks]);
+export function ProjectView({
+  project,
+  slug,
+  canEdit = false,
+  canWrite = false,
+  initialTab = "kanban",
+  people,
+  areas,
+  filters,
+  origins,
+}: ProjectViewProps) {
+  const [tab, setTab] = useState<TabKey>(initialTab);
+  const hasFilters = !!(filters.assignee || filters.priority || filters.origin);
 
   const hColor = healthColor(project.health);
 
   return (
     <>
-      <div className="cc-proj-header">
+      <div className="cc-proj-header" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div className="cc-proj-dot" style={{ backgroundColor: project.color }} />
-        <div className="cc-page-title">{project.name}</div>
+        <div className="cc-page-title" style={{ flex: 1 }}>{project.name}</div>
+        {canEdit && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <EditProjectButton
+              project={{
+                slug: project.slug,
+                name: project.name,
+                type: project.type,
+                status: project.status as ProjectStatus,
+                health: project.health,
+                progress: project.progress,
+                description: project.description,
+                color: project.color,
+              }}
+            />
+            <ArchiveProjectButton slug={project.slug} projectName={project.name} />
+          </div>
+        )}
       </div>
 
       <div className="cc-proj-info">
@@ -70,7 +92,7 @@ export function ProjectView({ project, slug }: { project: ProjectDetail; slug: s
 
       <div className="cc-tabs">
         <button className={`cc-tab ${tab === "kanban" ? "active" : ""}`} onClick={() => setTab("kanban")}>📋 Kanban</button>
-        {project.phases.length > 0 && (
+        {(project.phases.length > 0 || canEdit) && (
           <button className={`cc-tab ${tab === "timeline" ? "active" : ""}`} onClick={() => setTab("timeline")}>📅 Timeline</button>
         )}
         {project.github && (
@@ -79,49 +101,85 @@ export function ProjectView({ project, slug }: { project: ProjectDetail; slug: s
         {project.client && (
           <Link href={`/project/${slug}/client`} className="cc-tab" style={{ textDecoration: "none" }}>👥 Cliente</Link>
         )}
+        {canEdit && (
+          <Link href={`/project/${slug}/tester-setup`} className="cc-tab" style={{ textDecoration: "none" }}>🎤 Tester</Link>
+        )}
+        <Link href={`/project/${slug}/financeiro`} className="cc-tab" style={{ textDecoration: "none" }}>💰 Financeiro</Link>
       </div>
 
       {tab === "kanban" && (
-        <div className="cc-kanban" style={{ gridTemplateColumns: `repeat(${KANBAN_COLUMNS.length}, 1fr)` }}>
-          {KANBAN_COLUMNS.map(col => {
-            const tasks = grouped.get(col.key) ?? [];
-            return (
-              <div key={col.key} className="cc-kanban-col">
-                <div className="cc-kanban-header">
-                  {col.label}
-                  <span className="cc-kanban-count">{tasks.length}</span>
-                </div>
-                {tasks.map(task => (
-                  <TaskCard key={task.id} task={task} />
-                ))}
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <TaskFilters
+            basePath={`/project/${slug}`}
+            currentTab="kanban"
+            people={people}
+            selected={filters}
+            origins={origins}
+          />
+          {hasFilters && (
+            <div
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--muted, #999)",
+                marginBottom: 8,
+                fontStyle: "italic",
+              }}
+            >
+              ⓘ Drag &amp; drop desactivado quando há filtros activos.
+            </div>
+          )}
+          <KanbanBoard
+            tasks={project.tasks}
+            projectId={project.id}
+            projectSlug={slug}
+            phases={project.phases}
+            people={people}
+            areas={areas}
+            canWrite={canWrite && !hasFilters}
+          />
+        </>
       )}
 
       {tab === "timeline" && (
-        <div className="cc-card" style={{ padding: 24, overflowX: "auto" }}>
-          <div className="cc-timeline">
-            {project.phases.map((phase, i) => (
-              <span key={phase.id} style={{ display: "contents" }}>
-                <div className="cc-phase-node">
-                  <div className={`cc-phase-circle cc-phase-${phase.status === "em_curso" ? "active" : phase.status === "concluida" ? "done" : "pending"}`}>
-                    {phase.status === "concluida" ? "✓" : phase.status === "em_curso" ? phase.progress + "%" : i + 1}
-                  </div>
-                  <div className={`cc-phase-name ${phase.status === "em_curso" ? "active-name" : ""}`}>{phase.name}</div>
-                  <div className="cc-phase-dates">{formatMonth(phase.startDate)} — {formatMonth(phase.endDate)}</div>
-                </div>
-                {i < project.phases.length - 1 && (
-                  <div className={`cc-phase-line ${phase.status === "concluida" ? "cc-phase-line-done" : "cc-phase-line-pending"}`} />
-                )}
-              </span>
-            ))}
+        <>
+          {project.phases.length > 0 && (
+            <div className="cc-card" style={{ padding: 24, overflowX: "auto", marginBottom: 16 }}>
+              <div className="cc-timeline">
+                {project.phases.map((phase, i) => (
+                  <span key={phase.id} style={{ display: "contents" }}>
+                    <div className="cc-phase-node">
+                      <div className={`cc-phase-circle cc-phase-${phase.status === "em_curso" ? "active" : phase.status === "concluida" ? "done" : "pending"}`}>
+                        {phase.status === "concluida" ? "✓" : phase.status === "em_curso" ? phase.progress + "%" : i + 1}
+                      </div>
+                      <div className={`cc-phase-name ${phase.status === "em_curso" ? "active-name" : ""}`}>{phase.name}</div>
+                      <div className="cc-phase-dates">{formatMonth(phase.startDate)} — {formatMonth(phase.endDate)}</div>
+                    </div>
+                    {i < project.phases.length - 1 && (
+                      <div className={`cc-phase-line ${phase.status === "concluida" ? "cc-phase-line-done" : "cc-phase-line-pending"}`} />
+                    )}
+                  </span>
+                ))}
+              </div>
+              <div style={{ textAlign: "center", marginTop: 12, fontSize: "0.8rem", color: "var(--muted)" }}>
+                📍 Hoje: {formatDate(new Date())}
+              </div>
+            </div>
+          )}
+          <div className="cc-card" style={{ padding: 16 }}>
+            <PhaseListEditable
+              projectSlug={slug}
+              phases={project.phases.map((p) => ({
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                progress: p.progress,
+                startDate: p.startDate || undefined,
+                endDate: p.endDate || undefined,
+              }))}
+              canEdit={canEdit}
+            />
           </div>
-          <div style={{ textAlign: "center", marginTop: 12, fontSize: "0.8rem", color: "var(--muted)" }}>
-            📍 Hoje: {formatDate(new Date())}
-          </div>
-        </div>
+        </>
       )}
 
       {tab === "dev" && project.github && <DevTab github={project.github} repo={project.repo} />}
@@ -270,53 +328,3 @@ function PrRow({ pr }: { pr: GithubPR }) {
   );
 }
 
-function DevStatusBadge({ task }: { task: TaskData }) {
-  const config = DEV_STATUS_CONFIG[task.devStatus ?? "sem_codigo"];
-  if (!config) return null;
-
-  const inner = (
-    <div className="cc-dev-badge" style={{ color: config.color }}>
-      <span>{config.icon}</span>
-      <span>{config.label(task)}</span>
-    </div>
-  );
-
-  return task.githubPrUrl
-    ? <a href={task.githubPrUrl} target="_blank" rel="noopener" style={{ textDecoration: "none" }}>{inner}</a>
-    : inner;
-}
-
-function TaskCard({ task }: { task: TaskData }) {
-  const isStale = (task.daysStale ?? 0) >= 2;
-  const isAi = task.aiExtracted;
-
-  let cardClass = "cc-task-card";
-  if (isStale) cardClass += " cc-task-card-stale";
-  if (isAi) cardClass += " cc-task-card-ai";
-
-  return (
-    <div className={cardClass}>
-      <div className="cc-task-title-row">
-        <div className="cc-task-prio" style={{ backgroundColor: priorityColor(task.priority) }} />
-        <div className="cc-task-name">{task.title}</div>
-      </div>
-      {task.devStatus && task.devStatus !== "sem_codigo" && <DevStatusBadge task={task} />}
-      <div className="cc-task-bottom">
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div className="cc-task-avatar" style={{ backgroundColor: task.assigneeColor }}>{task.assignee.charAt(0)}</div>
-          <span>@{task.assignee}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {task.origin && <span className="cc-task-origin">{task.origin}</span>}
-          {isAi && <span className="cc-task-ai-badge">🤖 {Math.round((task.aiConfidence ?? 0) * 100)}%</span>}
-          {task.deadline && (
-            <span className="cc-task-deadline" style={{ color: isStale ? "var(--red)" : "var(--muted)" }}>
-              {isStale && "⚠️ "}{formatDateShort(task.deadline)}
-            </span>
-          )}
-          {isStale && <span className="cc-task-stale-badge">parada {task.daysStale}d</span>}
-        </div>
-      </div>
-    </div>
-  );
-}

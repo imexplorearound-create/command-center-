@@ -77,6 +77,68 @@ body {
 .light svg text { fill: var(--text); }
 .light svg text[fill="var(--muted)"] { fill: var(--muted); }
 
+/* ─── Dialog / Modal ─────────────────────────── */
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+}
+
+dialog {
+  margin: auto;
+}
+
+dialog input,
+dialog textarea,
+dialog select {
+  background: var(--bg-subtle);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+:root:not(.light) dialog,
+:root:not(.light) dialog input,
+:root:not(.light) dialog select,
+:root:not(.light) dialog textarea {
+  color-scheme: dark;
+}
+
+dialog select option {
+  background: var(--card);
+  color: var(--text);
+}
+
+dialog input:focus,
+dialog textarea:focus,
+dialog select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+dialog input::placeholder,
+dialog textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+dialog input[type="color"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+dialog input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+dialog input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
 /* ─── Shared ─────────────────────────────────── */
 
 .cc-card {
@@ -1081,6 +1143,19 @@ body {
 .cc-content-platform-linkedin { background: rgba(10,102,194,0.12); color: #4f9fd8; }
 .cc-content-platform-instagram { background: rgba(225,48,108,0.12); color: #e8688a; }
 .cc-content-platform-tiktok { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
+
+/* ─── CRM / Pipeline ────────────────────────── */
+
+.cc-deal-days-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.06);
+  color: var(--muted);
+}
 
 /* ─── Mobile ─────────────────────────────────── */
 

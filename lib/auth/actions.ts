@@ -1,8 +1,10 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/db";
+import { basePrisma } from "@/lib/db";
+import { resolveTenantBySlug, DEFAULT_TENANT_SLUG } from "@/lib/tenant";
 import { createSession, deleteSession } from "./session";
 
 export async function login(
@@ -16,8 +18,18 @@ export async function login(
     return { error: "Email e password são obrigatórios." };
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: email.toLowerCase().trim() },
+  // Resolve tenant from subdomain header (set by middleware)
+  const headerStore = await headers();
+  const tenantSlug = headerStore.get("x-tenant-slug") ?? DEFAULT_TENANT_SLUG;
+  const tenant = await resolveTenantBySlug(tenantSlug);
+
+  if (!tenant || !tenant.isActive) {
+    return { error: "Organização não encontrada." };
+  }
+
+  // Find user in this tenant (email is unique per tenant, not globally)
+  const user = await basePrisma.user.findFirst({
+    where: { email: email.toLowerCase().trim(), tenantId: tenant.id },
     include: { person: { select: { id: true, name: true } } },
   });
 
@@ -35,6 +47,8 @@ export async function login(
     personId: user.personId,
     email: user.email,
     role: user.role,
+    tenantId: tenant.id,
+    locale: tenant.locale,
   });
 
   redirect("/");

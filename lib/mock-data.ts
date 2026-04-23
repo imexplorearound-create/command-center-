@@ -124,6 +124,7 @@ export const mockProjectDetails: Record<string, ProjectDetail> = {
       { id: "t5", title: "Preparar demo para Sérgio", status: "feito", priority: "alta", assignee: "Bruno", assigneeColor: "#1D9E75", origin: "call", devStatus: "deployed" },
     ],
     client: {
+      id: "mock-client-1",
       companyName: "Fiscomelres / iPME",
       primaryContact: "Sérgio Gonçalves",
       status: "Negociação",
@@ -139,13 +140,13 @@ export const mockProjectDetails: Record<string, ProjectDetail> = {
         { title: "Validar requisitos legais com Nuno", assignee: "Miguel", priority: "media" },
       ],
       interactions: [
-        { id: "i1", type: "call", title: "Call de requisitos — módulos 2-7", body: "Sérgio confirmou workflow de reconciliação bancária. Márcia explicou processo actual de conferência manual. Bruno apresentou protótipo do módulo de captura.", date: "2026-03-30T15:00:00Z", participants: ["Sérgio", "Bruno", "Miguel", "Márcia"], source: "google_meet" },
-        { id: "i2", type: "decisao", title: "Começar pelo TOC Online", body: "Acordado com Sérgio que a integração com o TOC Online é a prioridade. Permite eliminar dupla entrada de dados já na fase 1.", date: "2026-03-27T16:30:00Z", participants: ["Sérgio", "Bruno"], source: "call" },
-        { id: "i3", type: "call", title: "Demo protótipo — captura de faturas", body: "Bruno apresentou protótipo funcional de captura de documentos via OCR. Sérgio ficou impressionado — 'supersónico'. Nuno pediu esclarecimento sobre RGPD.", date: "2026-03-27T15:00:00Z", participants: ["Sérgio", "Bruno", "Miguel", "Nuno"], source: "google_meet" },
-        { id: "i4", type: "email", title: "Email resumo enviado à equipa Fiscomelres", body: "Enviado resumo das decisões da call de 27 Mar com próximos passos e timeline proposta.", date: "2026-03-27T18:00:00Z", participants: ["Miguel", "Sérgio"], source: "gmail" },
-        { id: "i5", type: "documento", title: "Documento de requisitos v2 criado", body: "Actualizado com os inputs da call de 27 Mar — adicionados requisitos de reconciliação e conferência.", date: "2026-03-26T10:00:00Z", participants: ["Bruno"], source: "google_drive" },
-        { id: "i6", type: "call", title: "Primeira call de levantamento", body: "Identificadas dores: matching manual de faturas, reconciliação demorada, falta de visibilidade sobre estado das contas. Sérgio e Nuno explicaram o processo actual.", date: "2026-03-24T15:00:00Z", participants: ["Sérgio", "Nuno", "Miguel", "Bruno"], source: "google_meet" },
-        { id: "i7", type: "nota", title: "Nota: Sérgio pareceu hesitante sobre prazo", body: "Conversa informal depois da call — Sérgio quer avançar mas Nuno tem dúvidas sobre a timeline. Pode precisar de mais uma reunião de alinhamento.", date: "2026-03-24T17:00:00Z", participants: ["Miguel"], source: "manual" },
+        { id: "i1", type: "call", title: "Call de requisitos — módulos 2-7", body: "Sérgio confirmou workflow de reconciliação bancária. Márcia explicou processo actual de conferência manual. Bruno apresentou protótipo do módulo de captura.", date: "2026-03-30T15:00:00Z", participants: ["Sérgio", "Bruno", "Miguel", "Márcia"], participantIds: [], source: "google_meet", clientId: "mock-client-1" },
+        { id: "i2", type: "decisao", title: "Começar pelo TOC Online", body: "Acordado com Sérgio que a integração com o TOC Online é a prioridade. Permite eliminar dupla entrada de dados já na fase 1.", date: "2026-03-27T16:30:00Z", participants: ["Sérgio", "Bruno"], participantIds: [], source: "call", clientId: "mock-client-1" },
+        { id: "i3", type: "call", title: "Demo protótipo — captura de faturas", body: "Bruno apresentou protótipo funcional de captura de documentos via OCR. Sérgio ficou impressionado — 'supersónico'. Nuno pediu esclarecimento sobre RGPD.", date: "2026-03-27T15:00:00Z", participants: ["Sérgio", "Bruno", "Miguel", "Nuno"], participantIds: [], source: "google_meet", clientId: "mock-client-1" },
+        { id: "i4", type: "email", title: "Email resumo enviado à equipa Fiscomelres", body: "Enviado resumo das decisões da call de 27 Mar com próximos passos e timeline proposta.", date: "2026-03-27T18:00:00Z", participants: ["Miguel", "Sérgio"], participantIds: [], source: "gmail", clientId: "mock-client-1" },
+        { id: "i5", type: "documento", title: "Documento de requisitos v2 criado", body: "Actualizado com os inputs da call de 27 Mar — adicionados requisitos de reconciliação e conferência.", date: "2026-03-26T10:00:00Z", participants: ["Bruno"], participantIds: [], source: "google_drive", clientId: "mock-client-1" },
+        { id: "i6", type: "call", title: "Primeira call de levantamento", body: "Identificadas dores: matching manual de faturas, reconciliação demorada, falta de visibilidade sobre estado das contas. Sérgio e Nuno explicaram o processo actual.", date: "2026-03-24T15:00:00Z", participants: ["Sérgio", "Nuno", "Miguel", "Bruno"], participantIds: [], source: "google_meet", clientId: "mock-client-1" },
+        { id: "i7", type: "nota", title: "Nota: Sérgio pareceu hesitante sobre prazo", body: "Conversa informal depois da call — Sérgio quer avançar mas Nuno tem dúvidas sobre a timeline. Pode precisar de mais uma reunião de alinhamento.", date: "2026-03-24T17:00:00Z", participants: ["Miguel"], participantIds: [], source: "manual", clientId: "mock-client-1" },
       ],
     },
     repo: "brunojtfontes/ipme-digital",
@@ -305,11 +306,11 @@ export const mockSatellites: Record<string, SatelliteData> = {
 };
 
 export const mockValidationItems: ValidationItem[] = [
-  { id: "v1", type: "tarefa", title: "Integrar TOC Online", project: "iPME Digital", confidence: 0.78, suggestedAssignee: "Bruno", source: "Call 27 Mar", sourceDate: "2026-03-27" },
-  { id: "v2", type: "tarefa", title: "Validar requisitos com Nuno", project: "iPME Digital", confidence: 0.82, suggestedAssignee: "Miguel", source: "Call 30 Mar", sourceDate: "2026-03-30" },
-  { id: "v3", type: "decisao", title: "Começar pelo TOC Online", project: "iPME Digital", confidence: 0.91, source: "Call 27 Mar", sourceDate: "2026-03-27" },
-  { id: "v4", type: "resumo", title: "Bruno apresentou protótipo funcional de captura OCR", project: "iPME Digital", confidence: 0.88, source: "Call 27 Mar", sourceDate: "2026-03-27" },
-  { id: "v5", type: "prioridade", title: "Integração booking API — sugerida como Alta", project: "AURA PMS", confidence: 0.65, source: "Call 31 Mar", sourceDate: "2026-03-31" },
+  { id: "v1", kind: "task", type: "tarefa", title: "Integrar TOC Online", project: "iPME Digital", confidence: 0.78, suggestedAssignee: "Bruno", source: "Call 27 Mar", sourceDate: "2026-03-27" },
+  { id: "v2", kind: "task", type: "tarefa", title: "Validar requisitos com Nuno", project: "iPME Digital", confidence: 0.82, suggestedAssignee: "Miguel", source: "Call 30 Mar", sourceDate: "2026-03-30" },
+  { id: "v3", kind: "task", type: "decisao", title: "Começar pelo TOC Online", project: "iPME Digital", confidence: 0.91, source: "Call 27 Mar", sourceDate: "2026-03-27" },
+  { id: "v4", kind: "task", type: "resumo", title: "Bruno apresentou protótipo funcional de captura OCR", project: "iPME Digital", confidence: 0.88, source: "Call 27 Mar", sourceDate: "2026-03-27" },
+  { id: "v5", kind: "task", type: "prioridade", title: "Integração booking API — sugerida como Alta", project: "AURA PMS", confidence: 0.65, source: "Call 31 Mar", sourceDate: "2026-03-31" },
 ];
 
 export const mockTrustScores: TrustScoreData[] = [

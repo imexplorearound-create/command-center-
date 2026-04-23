@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 import { updateKrProgress } from "@/lib/okr-actions";
 
 export async function PATCH(
@@ -11,6 +10,9 @@ export async function PATCH(
 ) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
+
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
 
   const { id } = await params;
   const body = await request.json();
@@ -22,7 +24,7 @@ export async function PATCH(
   try {
     await updateKrProgress(id, body.currentValue);
 
-    const kr = await prisma.keyResult.findUnique({
+    const kr = await db.keyResult.findFirst({
       where: { id },
       include: {
         objective: { select: { id: true, title: true, currentValue: true, targetValue: true } },

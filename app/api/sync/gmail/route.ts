@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
+import { resolveHeaderTenant } from "@/lib/tenant";
 
 /**
  * Gmail sync endpoint.
@@ -17,6 +17,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
+
+  // Resolve tenant from header or default
+  const db = await resolveHeaderTenant(request.headers.get("x-tenant-id"));
 
   try {
     const body = (await request.json()) as {
@@ -44,7 +47,7 @@ export async function POST(request: NextRequest) {
     for (const email of body.emails) {
       // Skip duplicates by sourceRef
       if (email.messageId) {
-        const existing = await prisma.interaction.findFirst({
+        const existing = await db.interaction.findFirst({
           where: { sourceRef: `gmail:${email.messageId}` },
         });
         if (existing) continue;
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
       let clientId: string | null = null;
 
       if (email.projectSlug) {
-        const project = await prisma.project.findUnique({
+        const project = await db.project.findFirst({
           where: { slug: email.projectSlug },
           select: { id: true, client: { select: { id: true } } },
         });
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
       const allAddresses = [email.from, ...(email.to ?? [])];
       const participantIds: string[] = [];
       for (const addr of allAddresses) {
-        const person = await prisma.person.findFirst({
+        const person = await db.person.findFirst({
           where: { email: { equals: addr, mode: "insensitive" } },
           select: { id: true },
         });
@@ -75,7 +78,7 @@ export async function POST(request: NextRequest) {
 
       // Try to auto-detect project from participant emails
       if (!projectId && participantIds.length > 0) {
-        const contact = await prisma.clientContact.findFirst({
+        const contact = await db.clientContact.findFirst({
           where: { personId: { in: participantIds } },
           select: { client: { select: { id: true, projectId: true } } },
         });
@@ -85,8 +88,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      await prisma.interaction.create({
+      await db.interaction.create({
         data: {
+          tenantId: "",
           type: "email",
           title: email.subject.slice(0, 500),
           body: email.body?.slice(0, 5000),
@@ -103,11 +107,11 @@ export async function POST(request: NextRequest) {
 
     // Update client lastInteractionAt
     if (created > 0) {
-      const clients = await prisma.client.findMany({
+      const clients = await db.client.findMany({
         select: { id: true, projectId: true },
       });
       for (const client of clients) {
-        const latest = await prisma.interaction.findFirst({
+        const latest = await db.interaction.findFirst({
           where: { clientId: client.id },
           orderBy: { interactionDate: "desc" },
           select: { interactionDate: true },
@@ -116,7 +120,7 @@ export async function POST(request: NextRequest) {
           const daysSince = Math.floor(
             (Date.now() - latest.interactionDate.getTime()) / (1000 * 60 * 60 * 24)
           );
-          await prisma.client.update({
+          await db.client.update({
             where: { id: client.id },
             data: {
               lastInteractionAt: latest.interactionDate,
@@ -127,8 +131,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await prisma.syncLog.create({
+    await db.syncLog.create({
       data: {
+        tenantId: "",
         source: "gmail",
         action: "sync",
         status: "success",

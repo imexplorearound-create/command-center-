@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import { login } from "@/lib/auth/actions";
 
 export default function LoginPage() {
@@ -112,6 +113,12 @@ export default function LoginPage() {
             {pending ? "A entrar..." : "Entrar"}
           </button>
         </form>
+
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <Link href="/forgot-password" style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+            Esqueci a password
+          </Link>
+        </div>
       </div>
     </div>
   );

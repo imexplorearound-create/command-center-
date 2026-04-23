@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/db";
+import { basePrisma, tenantPrisma } from "@/lib/db";
+import { DEFAULT_TENANT_SLUG } from "@/lib/tenant";
 
 /**
  * Discord integration for Command Center.
@@ -34,20 +35,31 @@ export async function processDiscordMessage(msg: DiscordMessage) {
   const start = Date.now();
   const projectSlug = msg.projectSlug;
 
-  // Resolve project if slug provided
+  // Resolve tenant — from project if available, otherwise default tenant
+  let tenantId: string | null = null;
   let projectId: string | null = null;
+
   if (projectSlug) {
-    const project = await prisma.project.findUnique({
+    const project = await basePrisma.project.findFirst({
       where: { slug: projectSlug },
-      select: { id: true },
+      select: { id: true, tenantId: true },
     });
     projectId = project?.id ?? null;
+    tenantId = project?.tenantId ?? null;
   }
+
+  if (!tenantId) {
+    const tenant = await basePrisma.tenant.findFirst({ where: { slug: DEFAULT_TENANT_SLUG } });
+    if (!tenant) throw new Error("Default tenant not found");
+    tenantId = tenant.id;
+  }
+
+  const db = tenantPrisma(tenantId);
 
   // Resolve assignee
   let assigneeId: string | null = null;
   if (msg.assignee) {
-    const person = await prisma.person.findFirst({
+    const person = await db.person.findFirst({
       where: { name: { contains: msg.assignee, mode: "insensitive" } },
       select: { id: true },
     });
@@ -56,7 +68,7 @@ export async function processDiscordMessage(msg: DiscordMessage) {
 
   switch (msg.type) {
     case "task": {
-      await prisma.task.create({
+      await db.task.create({
         data: {
           title: msg.content.slice(0, 500),
           projectId,
@@ -69,6 +81,7 @@ export async function processDiscordMessage(msg: DiscordMessage) {
           aiExtracted: true,
           aiConfidence: 0.7,
           validationStatus: "por_confirmar",
+          tenantId: "",
         },
       });
       break;
@@ -77,12 +90,12 @@ export async function processDiscordMessage(msg: DiscordMessage) {
     case "decision": {
       if (projectId) {
         // Find client for this project
-        const client = await prisma.client.findFirst({
+        const client = await db.client.findFirst({
           where: { projectId },
           select: { id: true },
         });
 
-        await prisma.interaction.create({
+        await db.interaction.create({
           data: {
             type: "decisao",
             title: msg.content.slice(0, 500),
@@ -95,6 +108,7 @@ export async function processDiscordMessage(msg: DiscordMessage) {
             aiExtracted: true,
             aiConfidence: 0.7,
             validationStatus: "por_confirmar",
+            tenantId: "",
           },
         });
       }
@@ -102,13 +116,14 @@ export async function processDiscordMessage(msg: DiscordMessage) {
     }
 
     case "alert": {
-      await prisma.alert.create({
+      await db.alert.create({
         data: {
           type: "agent_alerta",
           severity: msg.severity ?? "warning",
           title: msg.content.slice(0, 500),
           description: `Fonte: ${msg.agentId ?? msg.author} via Discord #${msg.channel}`,
           relatedProjectId: projectId,
+          tenantId: "",
         },
       });
       break;
@@ -119,14 +134,14 @@ export async function processDiscordMessage(msg: DiscordMessage) {
       if (msg.clientId) {
         clientId = msg.clientId;
       } else if (projectId) {
-        const client = await prisma.client.findFirst({
+        const client = await db.client.findFirst({
           where: { projectId },
           select: { id: true },
         });
         clientId = client?.id ?? null;
       }
 
-      await prisma.interaction.create({
+      await db.interaction.create({
         data: {
           type: "nota",
           title: msg.content.slice(0, 500),
@@ -136,6 +151,7 @@ export async function processDiscordMessage(msg: DiscordMessage) {
           projectId,
           clientId,
           interactionDate: new Date(msg.timestamp),
+          tenantId: "",
         },
       });
       break;
@@ -148,13 +164,14 @@ export async function processDiscordMessage(msg: DiscordMessage) {
     }
   }
 
-  await prisma.syncLog.create({
+  await db.syncLog.create({
     data: {
       source: "discord",
       action: `message:${msg.type}`,
       status: "success",
       itemsProcessed: 1,
       durationMs: Date.now() - start,
+      tenantId: "",
     },
   });
 

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 
 export async function PATCH(
   request: NextRequest,
@@ -10,6 +9,9 @@ export async function PATCH(
 ) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
+
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
 
   const { id } = await params;
   const body = await request.json();
@@ -19,7 +21,7 @@ export async function PATCH(
   }
 
   try {
-    await prisma.objective.update({
+    await db.objective.update({
       where: { id },
       data: { currentValue: body.currentValue },
     });

@@ -19,7 +19,7 @@ Neste momento funciona com **dados de exemplo** (mock). Quando o Bruno criar a b
 No terminal do Mac, corre:
 
 ```
-ssh -L 3100:127.0.0.1:3100 miguel@89.167.39.10
+ssh -L 3100:127.0.0.1:3100 miguel@91.99.211.238
 ```
 
 Insere a password quando pedida.
@@ -192,7 +192,7 @@ A escolha fica guardada no browser.
 └── server.log              ← logs do servidor
 ```
 
-**Servidor:** corre na porta 3100 do VPS (89.167.39.10)
+**Servidor:** corre na porta 3100 do VPS (91.99.211.238)
 
 **Para reiniciar o servidor** (se necessário):
 ```bash

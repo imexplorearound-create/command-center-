@@ -1,33 +1,37 @@
 import { getOkrObjectives, getRoadmapItems } from "@/lib/queries";
 import { getAuthUser } from "@/lib/auth/dal";
-import { prisma } from "@/lib/db";
+import { getTenantDb } from "@/lib/tenant";
 import { OkrTabs } from "./okr-tabs";
+import { PageHeader } from "@/components/layout/page-header";
+import { getServerT } from "@/lib/i18n/server";
 
 export default async function ObjectivesPage() {
   const user = await getAuthUser();
+  const t = await getServerT();
+
+  const db = await getTenantDb();
 
   const [objectives, roadmapItems, projects] = await Promise.all([
     getOkrObjectives(user),
     getRoadmapItems(user),
-    prisma.project.findMany({
-      where: { status: "ativo" },
+    db.project.findMany({
+      where: { status: "ativo", archivedAt: null },
       select: { id: true, name: true, slug: true, color: true },
       orderBy: { name: "asc" },
     }),
   ]);
 
   return (
-    <>
-      <div className="cc-page-header">
-        <div className="cc-page-title">Estratégia</div>
-        <div className="cc-page-subtitle">OKRs e Roadmap 2026</div>
-      </div>
-
+    <PageHeader
+      kicker="Objectivos · OKRs"
+      title={t("objectives.title")}
+      subtitle={t("objectives.subtitle")}
+    >
       <OkrTabs
         objectives={objectives}
         roadmapItems={roadmapItems}
         projects={projects.map((p) => ({ id: p.id, name: p.name, slug: p.slug, color: p.color ?? "#888" }))}
       />
-    </>
+    </PageHeader>
   );
 }

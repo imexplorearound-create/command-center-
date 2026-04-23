@@ -1,0 +1,100 @@
+/* ─── Floating Button ─────────────────────────────────────── */
+
+.cc-feedback-btn {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 99999;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #378ADD;
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s, transform 0.15s;
+}
+
+.cc-feedback-btn:hover {
+  transform: scale(1.08);
+}
+
+.cc-feedback-btn--recording {
+  background: #E53935;
+  animation: cc-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes cc-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.5); }
+  50% { box-shadow: 0 0 0 14px rgba(229, 57, 53, 0); }
+}
+
+.cc-feedback-camera-btn {
+  position: fixed;
+  bottom: 24px;
+  left: 84px;
+  z-index: 99999;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #4a4a5e;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s, transform 0.15s;
+}
+
+.cc-feedback-camera-btn:hover {
+  transform: scale(1.08);
+  background: #5a5a6e;
+}
+
+/* ─── Toast ──────────────────────────────────────────────── */
+
+.cc-feedback-toast {
+  position: fixed;
+  bottom: 84px;
+  left: 24px;
+  z-index: 99999;
+  max-width: 340px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  border-left: 3px solid #378ADD;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+}
+
+.cc-feedback-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cc-feedback-toast--error {
+  border-left-color: #E53935;
+}
+
+.cc-feedback-toast-label {
+  font-weight: 600;
+  margin-bottom: 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+}

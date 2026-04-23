@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
+import { resolveHeaderTenant } from "@/lib/tenant";
 
 /**
  * Calendar sync endpoint.
@@ -19,6 +19,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
+
+  // Resolve tenant from header or default
+  const db = await resolveHeaderTenant(request.headers.get("x-tenant-id"));
 
   try {
     const body = (await request.json()) as {
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
       let clientId: string | null = null;
 
       if (event.projectSlug) {
-        const project = await prisma.project.findUnique({
+        const project = await db.project.findFirst({
           where: { slug: event.projectSlug },
           select: { id: true, client: { select: { id: true } } },
         });
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
       const participantIds: string[] = [];
       if (event.participants) {
         for (const name of event.participants) {
-          const person = await prisma.person.findFirst({
+          const person = await db.person.findFirst({
             where: {
               OR: [
                 { name: { contains: name, mode: "insensitive" } },
@@ -72,8 +75,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      await prisma.interaction.create({
+      await db.interaction.create({
         data: {
+          tenantId: "",
           type: event.type ?? "call",
           title: event.title.slice(0, 500),
           body: event.body,
@@ -87,8 +91,9 @@ export async function POST(request: NextRequest) {
       created++;
     }
 
-    await prisma.syncLog.create({
+    await db.syncLog.create({
       data: {
+        tenantId: "",
         source: "google_calendar",
         action: "sync",
         status: "success",

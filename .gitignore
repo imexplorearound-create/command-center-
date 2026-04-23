@@ -42,3 +42,9 @@ next-env.d.ts
 
 /app/generated/prisma
 server.log
+
+# user-generated audio recordings
+/public/feedback-audio/
+
+# user-generated screenshots
+/public/feedback-screenshots/

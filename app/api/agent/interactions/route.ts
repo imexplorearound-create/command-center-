@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/db";
-import { authenticateAgent } from "@/lib/agent-auth";
+import { authenticateAgent, resolveAgentTenant } from "@/lib/agent-auth";
 import { resolveProjectSlug, resolvePersonsByNames } from "@/lib/agent-helpers";
 
 export async function POST(request: NextRequest) {
   const auth = authenticateAgent(request);
   if (auth instanceof NextResponse) return auth;
+
+  const db = await resolveAgentTenant(request);
+  if (db instanceof NextResponse) return db;
 
   const body = await request.json();
   const { title, type, body: interactionBody, projectSlug, participants, date } = body;
@@ -20,14 +22,15 @@ export async function POST(request: NextRequest) {
 
   // Resolve project and participants in parallel
   const [resolved, participantIds] = await Promise.all([
-    projectSlug ? resolveProjectSlug(projectSlug) : null,
+    projectSlug ? resolveProjectSlug(db, projectSlug) : null,
     participants && Array.isArray(participants)
-      ? resolvePersonsByNames(participants)
+      ? resolvePersonsByNames(db, participants)
       : [],
   ]);
 
-  const interaction = await prisma.interaction.create({
+  const interaction = await db.interaction.create({
     data: {
+      tenantId: "",
       type,
       title,
       body: interactionBody,
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
 
   // Update client lastInteractionAt
   if (resolved?.clientId) {
-    await prisma.client.update({
+    await db.client.update({
       where: { id: resolved.clientId },
       data: { lastInteractionAt: new Date(), daysSinceContact: 0 },
     });

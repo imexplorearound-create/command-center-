@@ -1,55 +1,113 @@
-import { Phone, Video, MessageSquare, Calendar, GitBranch, type LucideIcon } from "lucide-react";
-import { ProjectCard } from "@/components/dashboard/project-card";
-import { ObjectivesBar } from "@/components/dashboard/objectives-bar";
-import { SatelliteCard } from "@/components/dashboard/satellite-card";
-import { AlertsPanel } from "@/components/dashboard/alerts-panel";
-import { ValidationPanel } from "@/components/dashboard/validation-panel";
-import { StatsRow } from "@/components/dashboard/stats-row";
-import { getProjects, getObjectives, getAlerts, getStats, getSatellites } from "@/lib/queries";
+import { CrewColumn } from "@/components/dashboard-v1/CrewColumn";
+import { Hero } from "@/components/dashboard-v1/Hero";
+import { Feed } from "@/components/dashboard-v1/Feed";
+import { MetricsStrip } from "@/components/dashboard-v1/MetricsStrip";
+import { ProjectsStrip } from "@/components/dashboard-v1/ProjectsStrip";
+import { DecisionsColumn } from "@/components/dashboard-v1/DecisionsColumn";
+import { AlertsPassive } from "@/components/dashboard-v1/AlertsPassive";
+import { TvCard } from "@/components/dashboard-v1/TvCard";
+import {
+  getCrew,
+  getAutonomy7d,
+  getProjects,
+  getProjectsAtRisk,
+  getOpenDecisions,
+  getResolvedDecisions24h,
+  getPendingFeedback,
+  getDevVelocity,
+  getPipelineValue,
+  getPassiveAlerts,
+  getFeedEvents,
+} from "@/lib/queries";
 import { getAuthUser } from "@/lib/auth/dal";
-import type { SatelliteData } from "@/lib/types";
+import { redirect } from "next/navigation";
 
-const satelliteConfig: { key: string; icon: LucideIcon; color: string }[] = [
-  { key: "calls", icon: Phone, color: "#3b82f6" },
-  { key: "content", icon: Video, color: "#f97316" },
-  { key: "discord", icon: MessageSquare, color: "#8b5cf6" },
-  { key: "calendar", icon: Calendar, color: "#22c55e" },
-  { key: "github", icon: GitBranch, color: "#f0f0f0" },
-];
+export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const user = await getAuthUser();
-  const [projects, objectives, alerts, stats, satellites] = await Promise.all([
+type SearchParams = { decisions?: string };
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const [user, sp] = await Promise.all([getAuthUser(), searchParams]);
+  if (!user) redirect("/login");
+
+  const decisionsView = sp.decisions === "resolved" ? "resolved" : "open";
+
+  const [
+    crew,
+    autonomy,
+    projects,
+    projectsAtRisk,
+    decisions,
+    resolvedDecisions,
+    pendingFeedback,
+    devVelocity,
+    pipelineValue,
+    alerts,
+    feedEvents,
+  ] = await Promise.all([
+    getCrew(),
+    getAutonomy7d(),
     getProjects(user),
-    getObjectives(user),
-    getAlerts(user),
-    getStats(user),
-    getSatellites(),
+    getProjectsAtRisk(),
+    getOpenDecisions(),
+    decisionsView === "resolved" ? getResolvedDecisions24h() : Promise.resolve([]),
+    getPendingFeedback(),
+    getDevVelocity(),
+    getPipelineValue(),
+    getPassiveAlerts(),
+    getFeedEvents(90),
   ]);
 
+  const activeProjects = projects.filter((p) => p.status === "ativo").slice(0, 10);
+  const firstName = user.name.split(" ")[0] ?? user.name;
+
   return (
-    <>
-      <StatsRow {...stats} />
+    <div
+      className="portiqa-theme"
+      data-theme="dark"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "280px minmax(0, 1fr) 380px",
+        minHeight: "calc(100vh - 54px)",
+        background: "var(--bg)",
+        color: "var(--ink)",
+      }}
+    >
+      <CrewColumn crew={crew} autonomy={autonomy} />
 
-      <div className="cc-section-title">📁 Projectos</div>
-      <div className="cc-projects">
-        {projects.map((project) => (
-          <ProjectCard key={project.id} {...project} />
-        ))}
-      </div>
+      <main style={{ padding: "8px 32px 32px", overflow: "auto" }}>
+        <Hero userName={firstName} openDecisionsCount={decisions.length} />
+        <MetricsStrip
+          projectsAtRisk={projectsAtRisk.length}
+          openDecisions={decisions.length}
+          pendingFeedback={pendingFeedback}
+          devVelocity={devVelocity}
+          pipelineValue={pipelineValue}
+        />
+        <Feed events={feedEvents} />
+        <ProjectsStrip projects={activeProjects} />
+      </main>
 
-      <ObjectivesBar objectives={objectives} />
-
-      <div className="cc-section-title">📡 Fontes de dados</div>
-      <div className="cc-satellites" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
-        {satelliteConfig.map(({ key, icon, color }) => (
-          <SatelliteCard key={key} icon={icon} color={color} {...(satellites as Record<string, SatelliteData>)[key]} />
-        ))}
-      </div>
-
-      <ValidationPanel />
-
-      <AlertsPanel alerts={alerts} />
-    </>
+      <aside
+        style={{
+          borderLeft: "1px solid var(--line)",
+          padding: "24px 20px",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <DecisionsColumn
+          decisions={decisions}
+          resolved={resolvedDecisions}
+          viewing={decisionsView}
+        />
+        <AlertsPassive alerts={alerts} />
+        <TvCard />
+      </aside>
+    </div>
   );
 }
