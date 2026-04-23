@@ -1,5 +1,11 @@
 import { AgentGlyph, HealthIndicator, ExecutorBadge } from "@/components/cc/atoms";
-import type { CrewRoleCardData, AutonomyData } from "@/lib/types";
+import type { CrewRoleCardData, AutonomyData, CrewState } from "@/lib/types";
+
+const STATE_LABEL: Record<Exclude<CrewState, "idle">, string> = {
+  live: "live",
+  pending: "pending",
+  thinking: "thinking",
+};
 
 type Props = {
   crew: CrewRoleCardData[];
@@ -110,10 +116,16 @@ function RoleCard({ role }: { role: CrewRoleCardData }) {
             fontSize: 14,
             fontWeight: 600,
             color: role.color,
+            flex: 1,
           }}
         >
           {role.name}
         </span>
+        {role.state !== "idle" ? (
+          <span className="meta" style={{ color: role.color }}>
+            {STATE_LABEL[role.state]}
+          </span>
+        ) : null}
       </div>
       <p
         style={{
@@ -130,15 +142,7 @@ function RoleCard({ role }: { role: CrewRoleCardData }) {
         <ExecutorBadge kind={role.executor.kind} name={role.executor.name} />
       </div>
       {role.lastLine ? (
-        <p
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontStyle: "italic",
-            fontSize: 11,
-            color: "var(--muted)",
-            margin: "8px 0 0",
-          }}
-        >
+        <p className="meta" style={{ margin: "8px 0 0" }}>
           {role.lastLine}
         </p>
       ) : null}

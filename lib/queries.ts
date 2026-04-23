@@ -1148,7 +1148,6 @@ import type {
   PipelineValueData,
   FeedEventData,
   CrewRoleSlug,
-  CrewState,
   ExecutorKind,
 } from "./types";
 import {
@@ -1159,22 +1158,63 @@ import {
   mapAlertSeverity,
   formatDeadline,
   DECISION_SEVERITY_RANK,
+  CREW_LIVE_MS,
+  computeCrewState,
+  computeCrewLoad,
+  formatSince,
 } from "./dashboard-helpers";
 
 export async function getCrew(): Promise<CrewRoleCardData[]> {
   const db = await getTenantDb();
-  const roles = await db.crewRole.findMany({
-    orderBy: { order: "asc" },
-    include: {
-      executors: {
-        where: { archivedAt: null },
-        orderBy: { isPrimary: "desc" },
+  const now = Date.now();
+  const since = new Date(now - CREW_LIVE_MS);
+
+  const [roles, openDecisions, recentActions] = await Promise.all([
+    db.crewRole.findMany({
+      orderBy: { order: "asc" },
+      include: {
+        executors: {
+          where: { archivedAt: null },
+          orderBy: { isPrimary: "desc" },
+        },
       },
-    },
-  });
+    }),
+    db.decision.findMany({
+      where: {
+        resolvedAt: null,
+        crewRoleId: { not: null },
+        OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: new Date(now) } }],
+      },
+      select: { crewRoleId: true },
+    }),
+    db.maestroAction.findMany({
+      where: { crewRoleId: { not: null }, createdAt: { gte: since } },
+      select: { crewRoleId: true, createdAt: true, extractionType: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const pendingByRole = new Map<string, number>();
+  for (const d of openDecisions) {
+    if (!d.crewRoleId) continue;
+    pendingByRole.set(d.crewRoleId, (pendingByRole.get(d.crewRoleId) ?? 0) + 1);
+  }
+
+  const lastActionByRole = new Map<string, { at: Date; type: string }>();
+  for (const a of recentActions) {
+    if (!a.crewRoleId || lastActionByRole.has(a.crewRoleId)) continue;
+    lastActionByRole.set(a.crewRoleId, { at: a.createdAt, type: a.extractionType });
+  }
 
   return roles.map((r) => {
     const primary = r.executors.find((e) => e.isPrimary) ?? r.executors[0];
+    const pending = pendingByRole.get(r.id) ?? 0;
+    const last = lastActionByRole.get(r.id);
+    const msSince = last ? now - last.at.getTime() : null;
+    const state = computeCrewState(msSince, pending);
+    const lastLine = last
+      ? `${last.type} · ${formatSince(msSince!)}`
+      : null;
     return {
       roleId: r.id,
       slug: r.slug as CrewRoleSlug,
@@ -1182,15 +1222,15 @@ export async function getCrew(): Promise<CrewRoleCardData[]> {
       description: r.description ?? "",
       color: r.color,
       glyphKey: r.glyphKey,
-      state: "idle" as CrewState, // real state logic lives in F2
+      state,
       executor: {
         id: primary?.id ?? null,
         kind: (primary?.kind ?? "manual") as ExecutorKind,
         name: primary?.name ?? "—",
         note: primary?.note ?? null,
       },
-      lastLine: null,
-      load: 0,
+      lastLine,
+      load: computeCrewLoad(pending),
     };
   });
 }
