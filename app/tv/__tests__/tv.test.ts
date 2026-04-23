@@ -15,10 +15,10 @@ describe("/tv route", () => {
     expect(layout).not.toContain("TopNav");
   });
 
-  it("layout sets meta refresh to 60 seconds", () => {
+  it("layout mounts TvAutoRefresh at 60 seconds (client island fallback)", () => {
     const layout = read("layout.tsx");
-    expect(layout).toMatch(/httpEquiv=["']refresh["']/);
-    expect(layout).toMatch(/content=["']60["']/);
+    expect(layout).toContain("TvAutoRefresh");
+    expect(layout).toMatch(/seconds=\{60\}/);
   });
 
   it("layout requires auth (redirects unauthenticated users)", () => {

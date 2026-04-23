@@ -13,6 +13,13 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
+  if (process.env.NODE_ENV === "production" && !process.env.ALLOW_SEED_IN_PROD) {
+    console.error(
+      "[seed-decisions] Refuso correr em produção. Define ALLOW_SEED_IN_PROD=1 se for mesmo essa a intenção.",
+    );
+    process.exit(1);
+  }
+
   const tenantSlug = process.argv[2] ?? "imexplorearound";
   const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
   if (!tenant) {

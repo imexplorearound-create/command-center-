@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth/dal";
 import { getDictionary } from "@/lib/i18n";
 import { I18nProvider } from "@/lib/i18n/context";
 import { getTenantLocale } from "@/lib/tenant";
+import { TvAutoRefresh } from "@/components/dashboard-v1/TvAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function TvLayout({
 
   return (
     <I18nProvider dictionary={dictionary}>
-      <meta httpEquiv="refresh" content="60" />
+      <TvAutoRefresh seconds={60} />
       {children}
     </I18nProvider>
   );
