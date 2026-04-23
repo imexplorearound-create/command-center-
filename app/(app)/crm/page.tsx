@@ -15,24 +15,23 @@ export default async function CrmPage() {
   const stats = computePipelineStats(opportunities);
 
   return (
-    <>
-      <div className="cc-page-header">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div className="cc-page-title">{t("crm.title")}</div>
-            <div className="cc-page-subtitle">
-              {t("crm.subtitle", { deals: stats.totalDeals, value: formatCurrency(stats.totalValue), rate: stats.conversionRate })}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <Link href="/crm/campaigns" className="cc-btn cc-btn-secondary" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Mail size={16} /> {t("crm.campaigns")}
-            </Link>
-            <ExportButton type="pipeline" />
-          </div>
+    <div className="portiqa-theme" style={{ minHeight: "100%", padding: "28px 32px" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 24, marginBottom: 24 }}>
+        <div>
+          <div className="kicker" style={{ marginBottom: 8 }}>CRM · Pipeline</div>
+          <h1 className="h1">{t("crm.title")}</h1>
+          <p className="lede" style={{ marginTop: 8 }}>
+            {t("crm.subtitle", { deals: stats.totalDeals, value: formatCurrency(stats.totalValue), rate: stats.conversionRate })}
+          </p>
         </div>
-      </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Link href="/crm/campaigns" className="btn btn-ghost">
+            <Mail size={14} /> {t("crm.campaigns")}
+          </Link>
+          <ExportButton type="pipeline" />
+        </div>
+      </header>
       <PipelineBoard opportunities={opportunities} people={people} />
-    </>
+    </div>
   );
 }

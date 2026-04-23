@@ -7,10 +7,10 @@ import type { FeedbackSessionStatus } from "@/lib/types";
 import { SessionActions } from "./session-actions";
 
 const STATUS_COLORS: Record<FeedbackSessionStatus, string> = {
-  processing: "var(--yellow)",
-  ready: "var(--green)",
-  reviewed: "var(--accent)",
-  archived: "var(--muted)",
+  processing: "var(--warning, #D4883A)",
+  ready: "var(--success, #2D8A5E)",
+  reviewed: "var(--accent, #B08A2C)",
+  archived: "var(--muted, #8A8778)",
 };
 
 interface SearchParams {
@@ -46,33 +46,33 @@ export default async function FeedbackPage({
   }
 
   return (
-    <>
-      <div className="cc-page-header">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div className="cc-page-title">{t("feedback.title")}</div>
-            <div className="cc-page-subtitle">{t("feedback.subtitle")}</div>
-          </div>
-          <Link
-            href={showArchived ? "/feedback" : "/feedback?archived=1"}
-            style={{ fontSize: "0.82rem", color: "var(--muted)", textDecoration: "none" }}
-          >
-            {t(showArchived ? "feedback.hide_archived" : "feedback.show_archived")}
-          </Link>
+    <div className="portiqa-theme" style={{ minHeight: "100%", padding: "28px 32px" }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 24, marginBottom: 24 }}>
+        <div>
+          <div className="kicker" style={{ marginBottom: 8 }}>Feedback · Testers</div>
+          <h1 className="h1">{t("feedback.title")}</h1>
+          <p className="lede" style={{ marginTop: 8 }}>{t("feedback.subtitle")}</p>
         </div>
-      </div>
+        <Link
+          href={showArchived ? "/feedback" : "/feedback?archived=1"}
+          className="mono"
+          style={{ textDecoration: "none" }}
+        >
+          {t(showArchived ? "feedback.hide_archived" : "feedback.show_archived")}
+        </Link>
+      </header>
 
       {sessions.length === 0 && (
-        <div className="cc-card" style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>
+        <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>
           {t("feedback.empty")}
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {[...groups.values()].map(({ project, sessions: projectSessions }) => (
-          <details key={project.id} open style={{ borderRadius: 8 }}>
+          <details key={project.id} open style={{ borderRadius: "var(--radius-card)" }}>
             <summary
-              className="cc-card"
+              className="card"
               style={{
                 padding: "10px 16px",
                 cursor: "pointer",
@@ -88,11 +88,11 @@ export default async function FeedbackPage({
                   width: 10,
                   height: 10,
                   borderRadius: "50%",
-                  backgroundColor: project.color ?? "#888",
+                  backgroundColor: project.color ?? "var(--muted)",
                 }}
               />
-              <span style={{ fontWeight: 600 }}>{project.name}</span>
-              <span style={{ color: "var(--muted)", fontSize: "0.82rem" }}>
+              <span style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: 16 }}>{project.name}</span>
+              <span className="mono" style={{ textTransform: "none" }}>
                 {t(
                   projectSessions.length === 1
                     ? "feedback.group_count_one"
@@ -109,7 +109,7 @@ export default async function FeedbackPage({
                 return (
                   <div
                     key={s.id}
-                    className="cc-card"
+                    className="card"
                     style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}
                   >
                     <Link
@@ -117,14 +117,17 @@ export default async function FeedbackPage({
                       style={{ flex: 1, textDecoration: "none", color: "inherit" }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span style={{ color: "var(--muted)", fontSize: "0.82rem" }}>
+                        <span className="mono" style={{ textTransform: "none" }}>
                           por {s.testerName}
                         </span>
-                        <span style={{ fontSize: "0.78rem", color, fontWeight: 600 }}>
+                        <span
+                          className="mono"
+                          style={{ color, fontWeight: 600 }}
+                        >
                           {label}
                         </span>
                       </div>
-                      <div style={{ display: "flex", gap: 14, fontSize: "0.8rem", color: "var(--muted)" }}>
+                      <div className="mono" style={{ display: "flex", gap: 14, textTransform: "none" }}>
                         <span>{formatDateShort(s.createdAt.toISOString())}</span>
                         <span>{s.itemsCount} nota{s.itemsCount !== 1 ? "s" : ""}</span>
                         {s.durationSeconds && <span>{Math.round(s.durationSeconds / 60)}min</span>}
@@ -141,6 +144,6 @@ export default async function FeedbackPage({
           </details>
         ))}
       </div>
-    </>
+    </div>
   );
 }

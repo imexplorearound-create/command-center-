@@ -21,17 +21,18 @@ export default async function ObjectivesPage() {
   ]);
 
   return (
-    <>
-      <div className="cc-page-header">
-        <div className="cc-page-title">{t("objectives.title")}</div>
-        <div className="cc-page-subtitle">{t("objectives.subtitle")}</div>
-      </div>
+    <div className="portiqa-theme" style={{ minHeight: "100%", padding: "28px 32px" }}>
+      <header style={{ marginBottom: 24 }}>
+        <div className="kicker" style={{ marginBottom: 8 }}>Objectivos · OKRs</div>
+        <h1 className="h1">{t("objectives.title")}</h1>
+        <p className="lede" style={{ marginTop: 8 }}>{t("objectives.subtitle")}</p>
+      </header>
 
       <OkrTabs
         objectives={objectives}
         roadmapItems={roadmapItems}
         projects={projects.map((p) => ({ id: p.id, name: p.name, slug: p.slug, color: p.color ?? "#888" }))}
       />
-    </>
+    </div>
   );
 }
