@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
     findFirst: vi.fn(),
     findMany: vi.fn(),
     create: vi.fn(),
+    createMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
   };
@@ -121,12 +122,14 @@ describe("recomputeDecisions", () => {
       { id: "role-pipeline", slug: "pipeline" },
     ]);
     mocks.decision.findMany.mockResolvedValue([]);
-    mocks.decision.create.mockResolvedValue({});
+    mocks.decision.createMany.mockResolvedValue({ count: 1 });
 
     const r = await recomputeDecisions();
     expect(r).toEqual({ success: true, data: { generated: 1, resolved: 0 } });
-    expect(mocks.decision.create).toHaveBeenCalledOnce();
-    expect(mocks.decision.create.mock.calls[0]![0].data.kind).toBe("pipeline_stall");
+    expect(mocks.decision.createMany).toHaveBeenCalledOnce();
+    const call = mocks.decision.createMany.mock.calls[0]![0];
+    expect(call.data).toHaveLength(1);
+    expect(call.data[0].kind).toBe("pipeline_stall");
   });
 
   it("auto-resolve decisão quando sinal desaparece", async () => {
@@ -169,7 +172,7 @@ describe("recomputeDecisions", () => {
 
     const r = await recomputeDecisions();
     expect(r).toEqual({ success: true, data: { generated: 0, resolved: 0 } });
-    expect(mocks.decision.create).not.toHaveBeenCalled();
+    expect(mocks.decision.createMany).not.toHaveBeenCalled();
     expect(mocks.decision.updateMany).not.toHaveBeenCalled();
   });
 });

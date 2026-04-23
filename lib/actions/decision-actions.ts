@@ -11,6 +11,7 @@ import {
   reopenDecisionSchema,
   type DecisionKindInput,
 } from "@/lib/validation/decision-schema";
+import { field, emptyToNull } from "./form-helpers";
 import type { ActionResult } from "./types";
 
 export async function createDecision(
@@ -21,18 +22,17 @@ export async function createDecision(
   if (!auth.ok) return { error: auth.error };
 
   const raw = {
-    title: formData.get("title") as string,
-    context: (formData.get("context") as string) || null,
-    kind: formData.get("kind") as string,
-    severity: formData.get("severity") as string,
-    crewRoleId: (formData.get("crewRoleId") as string) || null,
-    dueAt: (formData.get("dueAt") as string) || null,
-    projectId: (formData.get("projectId") as string) || null,
-    opportunityId: (formData.get("opportunityId") as string) || null,
-    taskId: (formData.get("taskId") as string) || null,
-    sourceMaestroActionId:
-      (formData.get("sourceMaestroActionId") as string) || null,
-    feedbackItemId: (formData.get("feedbackItemId") as string) || null,
+    title: field(formData, "title"),
+    context: emptyToNull(field(formData, "context")),
+    kind: field(formData, "kind"),
+    severity: field(formData, "severity"),
+    crewRoleId: emptyToNull(field(formData, "crewRoleId")),
+    dueAt: emptyToNull(field(formData, "dueAt")),
+    projectId: emptyToNull(field(formData, "projectId")),
+    opportunityId: emptyToNull(field(formData, "opportunityId")),
+    taskId: emptyToNull(field(formData, "taskId")),
+    sourceMaestroActionId: emptyToNull(field(formData, "sourceMaestroActionId")),
+    feedbackItemId: emptyToNull(field(formData, "feedbackItemId")),
   };
 
   const parsed = createDecisionSchema.safeParse(raw);
@@ -137,9 +137,8 @@ export async function reopenDecision(
 // ─── Recompute ────────────────────────────────────────────────────
 //
 // Varre sinais e faz upsert idempotente por chave natural
-// (tenantId + kind + naturalKey). Para a F2 basta o esqueleto +
-// 4 regras básicas. F3 vai preencher com priority + auto-resolve
-// inteligente via Maestro.
+// (tenantId + kind + naturalKey). F3 vai acrescentar priority +
+// auto-resolve inteligente via Maestro.
 
 type GeneratedDecision = {
   naturalKey: string;
@@ -153,6 +152,24 @@ type GeneratedDecision = {
   opportunityId?: string | null;
   feedbackItemId?: string | null;
 };
+
+type ExistingRef = {
+  id: string;
+  kind: string;
+  opportunityId: string | null;
+  feedbackItemId: string | null;
+  projectId: string | null;
+};
+
+const EXISTING_KEY_BY_KIND: Record<string, (d: ExistingRef) => string> = {
+  pipeline_stall: (d) => `pipeline_stall::opp:${d.opportunityId}`,
+  feedback_triage: (d) => `feedback_triage::feedback:${d.feedbackItemId}`,
+  bruno_block: (d) => `bruno_block::project-block:${d.projectId}`,
+};
+
+function keyForExisting(d: ExistingRef): string {
+  return EXISTING_KEY_BY_KIND[d.kind]?.(d) ?? `${d.kind}::unknown:${d.id}`;
+}
 
 export async function recomputeDecisions(): Promise<
   ActionResult<{ generated: number; resolved: number }>
@@ -230,10 +247,6 @@ export async function recomputeDecisions(): Promise<
     })),
   ];
 
-  const openKeys = new Set(
-    generated.map((g) => `${g.kind}::${g.naturalKey}`),
-  );
-
   const existing = await db.decision.findMany({
     where: { resolvedAt: null },
     select: {
@@ -245,29 +258,18 @@ export async function recomputeDecisions(): Promise<
     },
   });
 
-  const byKey = new Map(
-    existing.map((d) => {
-      const key =
-        d.kind === "pipeline_stall"
-          ? `pipeline_stall::opp:${d.opportunityId}`
-          : d.kind === "feedback_triage"
-            ? `feedback_triage::feedback:${d.feedbackItemId}`
-            : d.kind === "bruno_block"
-              ? `bruno_block::project-block:${d.projectId}`
-              : `${d.kind}::unknown:${d.id}`;
-      return [key, d.id];
-    }),
-  );
+  const byKey = new Map(existing.map((d) => [keyForExisting(d), d.id]));
 
-  let newCount = 0;
-  for (const g of generated) {
+  const toCreate = generated.filter((g) => {
     const key = `${g.kind}::${g.naturalKey}`;
-    if (byKey.has(key)) {
-      byKey.delete(key);
-      continue;
-    }
-    await db.decision.create({
-      data: {
+    const hit = byKey.has(key);
+    if (hit) byKey.delete(key);
+    return !hit;
+  });
+
+  if (toCreate.length > 0) {
+    await db.decision.createMany({
+      data: toCreate.map((g) => ({
         tenantId: "",
         title: g.title,
         context: g.context,
@@ -278,9 +280,8 @@ export async function recomputeDecisions(): Promise<
         projectId: g.projectId ?? null,
         opportunityId: g.opportunityId ?? null,
         feedbackItemId: g.feedbackItemId ?? null,
-      },
+      })),
     });
-    newCount += 1;
   }
 
   const toAutoResolve = [...byKey.values()];
@@ -294,12 +295,9 @@ export async function recomputeDecisions(): Promise<
     });
   }
 
-  // Silence unused var lint — useful for future stall kinds
-  void openKeys;
-
   revalidatePath("/");
   return {
     success: true,
-    data: { generated: newCount, resolved: toAutoResolve.length },
+    data: { generated: toCreate.length, resolved: toAutoResolve.length },
   };
 }
