@@ -49,6 +49,15 @@ const AUTO_RESOLVED: ResolvedDecisionData = {
   resolutionSource: "auto",
 };
 
+describe("DecisionsColumn — hooks cross-component (F3 Passo F)", () => {
+  it("marca o <section> com data-focus-target='decisions' para o Highlighter", () => {
+    const { container } = render(<DecisionsColumn decisions={[DEC]} />);
+    const section = container.querySelector('[data-focus-target="decisions"]');
+    expect(section).not.toBeNull();
+    expect(section?.tagName).toBe("SECTION");
+  });
+});
+
 describe("DecisionsColumn — readOnly mode", () => {
   it("não renderiza o botão de resolver quando readOnly=true", () => {
     render(<DecisionsColumn decisions={[DEC]} readOnly />);
