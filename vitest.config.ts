@@ -11,7 +11,11 @@ export default defineConfig({
       "app/**/__tests__/**/*.test.{ts,tsx}",
       "components/**/__tests__/**/*.test.{ts,tsx}",
     ],
-    setupFiles: [],
+    // Ficheiros de componente declaram jsdom via pragma
+    // `// @vitest-environment jsdom` no topo. Vitest 4 deprecou
+    // `environmentMatchGlobs` — com 2 component tests apenas, a pragma
+    // é mais leve do que migrar para o novo API de `projects`.
+    setupFiles: ["./vitest.setup.ts"],
   },
   resolve: {
     alias: {
