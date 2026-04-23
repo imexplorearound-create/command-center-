@@ -3,6 +3,8 @@ import {
   calcAutonomyPercent,
   classifyBudgetAlert,
   mapAlertSeverity,
+  formatDeadline,
+  DECISION_SEVERITY_RANK,
 } from "../dashboard-helpers";
 
 describe("calcAutonomyPercent", () => {
@@ -70,5 +72,36 @@ describe("mapAlertSeverity", () => {
     expect(mapAlertSeverity(null)).toBe("pend");
     expect(mapAlertSeverity("")).toBe("pend");
     expect(mapAlertSeverity("anything-unknown")).toBe("pend");
+  });
+});
+
+describe("formatDeadline", () => {
+  const NOW = new Date("2026-04-23T12:00:00Z").getTime();
+
+  it("returns null when date is null/undefined", () => {
+    expect(formatDeadline(null, NOW)).toBe(null);
+    expect(formatDeadline(undefined, NOW)).toBe(null);
+  });
+
+  it("returns 'atrasado' when date is in the past", () => {
+    const d = new Date(NOW - 60 * 60 * 1000);
+    expect(formatDeadline(d, NOW)).toBe("atrasado");
+  });
+
+  it("formats hours when < 24h away", () => {
+    const d = new Date(NOW + 5 * 60 * 60 * 1000);
+    expect(formatDeadline(d, NOW)).toBe("em 5h");
+  });
+
+  it("formats days when >= 24h away", () => {
+    const d = new Date(NOW + 3 * 24 * 60 * 60 * 1000);
+    expect(formatDeadline(d, NOW)).toBe("em 3d");
+  });
+});
+
+describe("DECISION_SEVERITY_RANK", () => {
+  it("orders block > warn > pend", () => {
+    expect(DECISION_SEVERITY_RANK.block).toBeGreaterThan(DECISION_SEVERITY_RANK.warn);
+    expect(DECISION_SEVERITY_RANK.warn).toBeGreaterThan(DECISION_SEVERITY_RANK.pend);
   });
 });

@@ -1140,6 +1140,9 @@ import type {
   AutonomyData,
   ProjectAtRiskData,
   OpenDecisionData,
+  ResolvedDecisionData,
+  DecisionKind,
+  AlertSeverity,
   PassiveAlertData,
   DevVelocityData,
   PipelineValueData,
@@ -1154,6 +1157,8 @@ import {
   calcAutonomyPercent,
   classifyBudgetAlert,
   mapAlertSeverity,
+  formatDeadline,
+  DECISION_SEVERITY_RANK,
 } from "./dashboard-helpers";
 
 export async function getCrew(): Promise<CrewRoleCardData[]> {
@@ -1246,14 +1251,86 @@ export async function getProjectsAtRisk(): Promise<ProjectAtRiskData[]> {
 }
 
 /**
- * Open decisions for the right-hand column.
- *
- * Blocked on decision P2 (addendum-alinhamento v2.1): whether "decisões"
- * lives in a new `Decision` table or is a view aggregating
- * `MaestroAction`/`Task`/signals. Until P2 is closed, returns [].
+ * Open decisions for the right-hand column — only the ones currently
+ * actionable (not resolved, not snoozed into the future).
  */
-export async function getOpenDecisions(): Promise<OpenDecisionData[]> {
-  return [];
+export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> {
+  const db = await getTenantDb();
+  const now = new Date();
+  const rows = await db.decision.findMany({
+    where: {
+      resolvedAt: null,
+      OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: now } }],
+    },
+    select: {
+      id: true,
+      title: true,
+      context: true,
+      kind: true,
+      severity: true,
+      dueAt: true,
+      snoozedUntil: true,
+      crewRole: { select: { slug: true } },
+    },
+    take: limit,
+  });
+
+  return rows
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      context: r.context ?? "",
+      deadline: formatDeadline(r.dueAt),
+      crewRoleSlug: (r.crewRole?.slug ?? null) as CrewRoleSlug | null,
+      severity: r.severity as AlertSeverity,
+      kind: r.kind as DecisionKind,
+      snoozedUntil: r.snoozedUntil?.toISOString() ?? null,
+    }))
+    .sort((a, b) => {
+      const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
+      if (sev !== 0) return sev;
+      const aDue = a.deadline === null ? Infinity : 0;
+      const bDue = b.deadline === null ? Infinity : 0;
+      return aDue - bDue;
+    });
+}
+
+/**
+ * Decisions resolved in the last 24h — feeds the "Resolvidas · 24h"
+ * toggle sub-view on the decisions column (Passo F).
+ */
+export async function getResolvedDecisions24h(): Promise<ResolvedDecisionData[]> {
+  const db = await getTenantDb();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db.decision.findMany({
+    where: { resolvedAt: { gte: since } },
+    select: {
+      id: true,
+      title: true,
+      context: true,
+      kind: true,
+      severity: true,
+      dueAt: true,
+      resolvedAt: true,
+      resolutionNote: true,
+      crewRole: { select: { slug: true } },
+      resolvedBy: { select: { name: true } },
+    },
+    orderBy: { resolvedAt: "desc" },
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    context: r.context ?? "",
+    deadline: formatDeadline(r.dueAt),
+    crewRoleSlug: (r.crewRole?.slug ?? null) as CrewRoleSlug | null,
+    severity: r.severity as AlertSeverity,
+    kind: r.kind as DecisionKind,
+    resolvedAt: r.resolvedAt!.toISOString(),
+    resolvedByName: r.resolvedBy?.name ?? null,
+    resolutionNote: r.resolutionNote,
+  }));
 }
 
 /**

@@ -44,6 +44,31 @@ export const SEVERITY_COLOR: Record<"block" | "warn" | "pend", string> = {
   pend: "var(--accent, #B08A2C)",
 };
 
+/** Severity rank for sort order in decisions column (block > warn > pend). */
+export const DECISION_SEVERITY_RANK: Record<string, number> = {
+  block: 3,
+  warn: 2,
+  pend: 1,
+};
+
+/**
+ * Human-friendly relative deadline label.
+ *   - null date  → null
+ *   - past       → "atrasado"
+ *   - < 24h      → "em Nh"
+ *   - >= 24h     → "em Nd"
+ */
+export function formatDeadline(
+  d: Date | null | undefined,
+  nowMs: number = Date.now(),
+): string | null {
+  if (!d) return null;
+  const diffH = (d.getTime() - nowMs) / (60 * 60 * 1000);
+  if (diffH < 0) return "atrasado";
+  if (diffH < 24) return `em ${Math.round(diffH)}h`;
+  return `em ${Math.round(diffH / 24)}d`;
+}
+
 /** Feedback session status palette used by /feedback (Portiqa tokens). */
 export const FEEDBACK_STATUS_COLOR: Record<
   "processing" | "ready" | "reviewed" | "archived",
