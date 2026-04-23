@@ -64,6 +64,7 @@ model Tenant {
   llmConfig              TenantLLMConfig?
   crewRoles              CrewRole[]
   executors              Executor[]
+  decisions              Decision[]
 
   @@map("tenants")
 }
@@ -213,6 +214,7 @@ model Project {
   timeEntries    TimeEntry[] @relation("TimeEntryProject")
   emailRecords   EmailRecord[]
   investmentMap  InvestmentMap?
+  decisions      Decision[]  @relation("DecisionProject")
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -329,6 +331,7 @@ model Person {
   campaignsCreated        EmailCampaign[]       @relation("CampaignCreator")
   campaignRecipients      CampaignRecipient[]   @relation("CampaignRecipientPerson")
   executorAsHuman         Executor[]            @relation("ExecutorHuman")
+  decisionsResolved       Decision[]            @relation("DecisionResolvedBy")
 
   @@index([tenantId])
   @@index([archivedAt], map: "idx_people_archived")
@@ -403,6 +406,7 @@ model Task {
   githubEvents          GithubEvent[]
   feedbackItem          FeedbackItem?            @relation("FeedbackTask")
   timeEntries   TimeEntry[] @relation("TimeEntryTask")
+  decisions     Decision[]  @relation("DecisionTask")
 
   @@index([tenantId])
   @@index([projectId], map: "idx_tasks_project")
@@ -601,6 +605,7 @@ model MaestroAction {
   performedBy Person?   @relation("MaestroActionPerformedBy", fields: [performedById], references: [id])
   crewRole    CrewRole? @relation("MaestroActionCrewRole", fields: [crewRoleId], references: [id])
   executor    Executor? @relation("MaestroActionExecutor", fields: [executorId], references: [id])
+  decisions   Decision[] @relation("DecisionSource")
 
   @@index([tenantId])
   @@index([agentId, extractionType], map: "idx_maestro_actions_agent_type")
@@ -629,6 +634,7 @@ model CrewRole {
   maestroActions MaestroAction[] @relation("MaestroActionCrewRole")
   feedbackItems  FeedbackItem[]  @relation("FeedbackItemCrewRole")
   opportunities  Opportunity[]   @relation("OpportunityCrewRole")
+  decisions      Decision[]
 
   @@unique([tenantId, slug], map: "crew_roles_tenant_slug_unique")
   @@index([tenantId])
@@ -664,6 +670,45 @@ model Executor {
   @@index([tenantId])
   @@index([crewRoleId], map: "idx_executors_crew_role")
   @@map("executors")
+}
+
+// ─── Decisions (right-hand Dashboard column) ────────────────
+
+model Decision {
+  id                    String    @id @default(uuid()) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  title                 String    @db.VarChar(200)
+  context               String?   @db.Text
+  kind                  String    @db.VarChar(50)
+  severity              String    @db.VarChar(20)
+  priority              Int       @default(0)
+  crewRoleId            String?   @map("crew_role_id") @db.Uuid
+  dueAt                 DateTime? @map("due_at") @db.Timestamptz
+  snoozedUntil          DateTime? @map("snoozed_until") @db.Timestamptz
+  resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedById          String?   @map("resolved_by") @db.Uuid
+  resolutionNote        String?   @map("resolution_note") @db.Text
+  projectId             String?   @map("project_id") @db.Uuid
+  opportunityId         String?   @map("opportunity_id") @db.Uuid
+  taskId                String?   @map("task_id") @db.Uuid
+  sourceMaestroActionId String?   @map("source_maestro_action_id") @db.Uuid
+  feedbackItemId        String?   @map("feedback_item_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant              Tenant         @relation(fields: [tenantId], references: [id])
+  crewRole            CrewRole?      @relation(fields: [crewRoleId], references: [id])
+  project             Project?       @relation("DecisionProject", fields: [projectId], references: [id])
+  opportunity         Opportunity?   @relation("DecisionOpportunity", fields: [opportunityId], references: [id])
+  task                Task?          @relation("DecisionTask", fields: [taskId], references: [id])
+  resolvedBy          Person?        @relation("DecisionResolvedBy", fields: [resolvedById], references: [id])
+  sourceMaestroAction MaestroAction? @relation("DecisionSource", fields: [sourceMaestroActionId], references: [id])
+  feedbackItem        FeedbackItem?  @relation("DecisionFeedback", fields: [feedbackItemId], references: [id])
+
+  @@index([tenantId, resolvedAt], map: "idx_decisions_tenant_resolved")
+  @@index([tenantId, crewRoleId, resolvedAt], map: "idx_decisions_tenant_crew_resolved")
+  @@index([tenantId, dueAt], map: "idx_decisions_tenant_due")
+  @@map("decisions")
 }
 
 // ─── Maestro Chat ───────────────────────────────────────────
@@ -1038,6 +1083,7 @@ model FeedbackItem {
   triagedBy  Person?         @relation("FeedbackTriager", fields: [triagedById], references: [id])
   attributedCrewRole CrewRole? @relation("FeedbackItemCrewRole", fields: [attributedCrewRoleId], references: [id])
   attributedExecutor Executor? @relation("FeedbackItemExecutor", fields: [attributedExecutorId], references: [id])
+  decisions          Decision[] @relation("DecisionFeedback")
 
   @@index([tenantId])
   @@index([sessionId], map: "idx_feedback_items_session")
@@ -1085,6 +1131,7 @@ model Opportunity {
   executor   Executor? @relation("OpportunityExecutor", fields: [executorId], references: [id])
   activities   OpportunityActivity[]
   emailRecords EmailRecord[]
+  decisions    Decision[] @relation("DecisionOpportunity")
 
   @@index([tenantId])
   @@index([stageId], map: "idx_opportunities_stage")

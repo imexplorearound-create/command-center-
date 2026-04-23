@@ -550,6 +550,14 @@ export interface ProjectAtRiskData {
   reason: string;
 }
 
+export type DecisionKind =
+  | "pipeline_stall"
+  | "client_reply"
+  | "bruno_block"
+  | "budget"
+  | "feedback_triage"
+  | "other";
+
 export interface OpenDecisionData {
   id: string;
   title: string;
@@ -557,6 +565,14 @@ export interface OpenDecisionData {
   deadline: string | null;
   crewRoleSlug: CrewRoleSlug | null;
   severity: AlertSeverity;
+  kind?: DecisionKind;
+  snoozedUntil?: string | null;
+}
+
+export interface ResolvedDecisionData extends OpenDecisionData {
+  resolvedAt: string;
+  resolvedByName: string | null;
+  resolutionNote: string | null;
 }
 
 export interface PassiveAlertData {
