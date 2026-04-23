@@ -1161,9 +1161,9 @@ import {
   CREW_LIVE_MS,
   computeCrewState,
   computeCrewLoad,
-  formatSince,
 } from "./dashboard-helpers";
 import { narrateAlert } from "./maestro/alert-narrator";
+import { selectCrewPhrase } from "./maestro/voice/selector";
 
 export async function getCrew(): Promise<CrewRoleCardData[]> {
   const db = await getTenantDb();
@@ -1213,8 +1213,14 @@ export async function getCrew(): Promise<CrewRoleCardData[]> {
     const last = lastActionByRole.get(r.id);
     const msSince = last ? now - last.at.getTime() : null;
     const state = computeCrewState(msSince, pending);
-    const lastLine =
-      last && msSince !== null ? `${last.type} · ${formatSince(msSince)}` : null;
+    // F3 Voz (Passo B): substitui o log técnico por frase humana via
+    // `selectCrewPhrase`. `lastProject` fica null por agora — enriquecer
+    // com join a MaestroAction.projectId é trabalho do Passo C.
+    const lastLine = selectCrewPhrase({
+      state,
+      pendingDecisions: pending,
+      lastProject: null,
+    });
     return {
       roleId: r.id,
       slug: r.slug as CrewRoleSlug,

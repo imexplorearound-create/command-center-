@@ -1,29 +1,21 @@
 import { Kicker } from "@/components/cc/atoms";
+import { selectHeroVoice, type HeroSignals } from "@/lib/maestro/voice/selector";
 
 type Props = {
-  userName: string;
-  openDecisionsCount: number;
+  signals: HeroSignals;
 };
 
-export function Hero({ userName, openDecisionsCount }: Props) {
-  const h1 =
-    openDecisionsCount > 0
-      ? `Bom dia, ${userName}. Estás a ${openDecisionsCount} decis${openDecisionsCount === 1 ? "ão" : "ões"} de um dia limpo.`
-      : `Bom dia, ${userName}. Nada urgente.`;
-
-  const subtitle =
-    openDecisionsCount > 0
-      ? "A tripulação processou eventos nas últimas horas. Abaixo o que precisa da tua atenção hoje."
-      : "Tens espaço para trabalho focado. O feed da manhã está em baixo.";
+export function Hero({ signals }: Props) {
+  const voice = selectHeroVoice(signals);
 
   return (
     <header style={{ padding: "24px 0 12px" }}>
-      <Kicker>01 · Dashboard · {userName}</Kicker>
+      <Kicker>01 · Dashboard · {signals.userName}</Kicker>
       <h1 className="h1" style={{ marginTop: 14 }}>
-        {h1}
+        {voice.h1}
       </h1>
       <p className="lede" style={{ marginTop: 10 }}>
-        {subtitle}
+        {voice.subtitle}
       </p>
     </header>
   );

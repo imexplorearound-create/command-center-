@@ -64,6 +64,13 @@ export default async function DashboardPage({
 
   const activeProjects = projects.filter((p) => p.status === "ativo").slice(0, 10);
   const firstName = user.name.split(" ")[0] ?? user.name;
+  const heroSignals = {
+    userName: firstName,
+    openDecisions: decisions.length,
+    blockDecisions: decisions.filter((d) => d.severity === "block").length,
+    projectsAtRisk: projectsAtRisk.length,
+    hourOfDay: new Date().getHours(),
+  };
 
   return (
     <div
@@ -80,7 +87,7 @@ export default async function DashboardPage({
       <CrewColumn crew={crew} autonomy={autonomy} />
 
       <main style={{ padding: "8px 32px 32px", overflow: "auto" }}>
-        <Hero userName={firstName} openDecisionsCount={decisions.length} />
+        <Hero signals={heroSignals} />
         <MetricsStrip
           projectsAtRisk={projectsAtRisk.length}
           openDecisions={decisions.length}
