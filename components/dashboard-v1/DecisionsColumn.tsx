@@ -13,7 +13,7 @@ type Props = {
 };
 
 export function DecisionsColumn({ decisions, resolved = [], viewing = "open", readOnly = false }: Props) {
-  const isResolved = viewing === "resolved";
+  const isResolved = !readOnly && viewing === "resolved";
   const expanded = decisions.slice(0, 3);
   const overflow = decisions.slice(3);
 

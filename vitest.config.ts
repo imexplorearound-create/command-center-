@@ -8,7 +8,8 @@ export default defineConfig({
     include: [
       "lib/**/*.test.ts",
       "lib/**/__tests__/**/*.test.ts",
-      "app/**/__tests__/**/*.test.ts",
+      "app/**/__tests__/**/*.test.{ts,tsx}",
+      "components/**/__tests__/**/*.test.{ts,tsx}",
     ],
     setupFiles: [],
   },

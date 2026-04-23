@@ -31,6 +31,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import {
+  createDecision,
   resolveDecision,
   snoozeDecision,
   reopenDecision,
@@ -43,6 +44,82 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireWriter.mockResolvedValue({ ok: true, user: { personId: "person-1", role: "admin" } });
   mocks.getAuthUser.mockResolvedValue({ personId: "person-1", role: "admin" });
+});
+
+describe("createDecision", () => {
+  it("devolve erro se caller não for writer", async () => {
+    mocks.requireWriter.mockResolvedValueOnce({ ok: false, error: "Sem permissão" });
+    const fd = new FormData();
+    fd.set("title", "Decidir orçamento Q2");
+    fd.set("kind", "other");
+    fd.set("severity", "warn");
+    const r = await createDecision(undefined, fd);
+    expect(r).toEqual({ error: "Sem permissão" });
+    expect(mocks.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("cria decisão válida e devolve id", async () => {
+    mocks.decision.create.mockResolvedValue({ id: VALID_UUID });
+    const fd = new FormData();
+    fd.set("title", "Decidir orçamento Q2");
+    fd.set("context", "Cliente pediu proposta até sexta");
+    fd.set("kind", "budget");
+    fd.set("severity", "warn");
+    fd.set("dueAt", "2026-05-01T12:00:00Z");
+
+    const r = await createDecision(undefined, fd);
+
+    expect(r).toEqual({ success: true, data: { id: VALID_UUID } });
+    const call = mocks.decision.create.mock.calls[0]![0];
+    expect(call.data.title).toBe("Decidir orçamento Q2");
+    expect(call.data.context).toBe("Cliente pediu proposta até sexta");
+    expect(call.data.kind).toBe("budget");
+    expect(call.data.severity).toBe("warn");
+    expect(call.data.dueAt).toBeInstanceOf(Date);
+    expect(call.data.dueAt?.toISOString()).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("converte campos opcionais vazios em null (emptyToNull)", async () => {
+    mocks.decision.create.mockResolvedValue({ id: VALID_UUID });
+    const fd = new FormData();
+    fd.set("title", "Escolher nome da release");
+    fd.set("kind", "other");
+    fd.set("severity", "pend");
+    // context, crewRoleId, dueAt etc. omitidos — FormData.get devolve string vazia
+    fd.set("context", "");
+    fd.set("crewRoleId", "");
+    fd.set("dueAt", "");
+    fd.set("projectId", "");
+
+    const r = await createDecision(undefined, fd);
+
+    expect(r).toEqual({ success: true, data: { id: VALID_UUID } });
+    const call = mocks.decision.create.mock.calls[0]![0];
+    expect(call.data.context).toBeNull();
+    expect(call.data.crewRoleId).toBeNull();
+    expect(call.data.dueAt).toBeNull();
+    expect(call.data.projectId).toBeNull();
+  });
+
+  it("rejeita input com kind inválido", async () => {
+    const fd = new FormData();
+    fd.set("title", "Algo");
+    fd.set("kind", "kind_que_nao_existe");
+    fd.set("severity", "warn");
+    const r = await createDecision(undefined, fd);
+    expect(r).toHaveProperty("error");
+    expect(mocks.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("rejeita título vazio", async () => {
+    const fd = new FormData();
+    fd.set("title", "");
+    fd.set("kind", "other");
+    fd.set("severity", "warn");
+    const r = await createDecision(undefined, fd);
+    expect(r).toHaveProperty("error");
+    expect(mocks.decision.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveDecision", () => {
