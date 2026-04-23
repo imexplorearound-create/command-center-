@@ -72,10 +72,10 @@ export default async function TvPage() {
         color: "var(--ink)",
       }}
     >
-      <CrewColumn crew={crew} autonomy={autonomy} />
+      <CrewColumn crew={crew} autonomy={autonomy} readOnly />
 
       <main style={{ padding: "8px 32px 32px", overflow: "auto" }}>
-        <Hero signals={heroSignals} />
+        <Hero signals={heroSignals} readOnly />
         <MetricsStrip
           projectsAtRisk={projectsAtRisk.length}
           openDecisions={decisions.length}

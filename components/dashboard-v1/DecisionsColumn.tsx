@@ -27,7 +27,7 @@ export function DecisionsColumn({
   const showSortToggle = !readOnly && !isResolved;
 
   return (
-    <section>
+    <section data-focus-target="decisions">
       {readOnly ? null : <DecisionsHighlighter />}
       <header style={{ display: "flex", flexDirection: "column", alignItems: "stretch", marginBottom: 12, gap: 4 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
