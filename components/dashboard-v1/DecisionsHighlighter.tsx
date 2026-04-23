@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { HIGHLIGHT_EVENT } from "./FeedPills";
 
 const HIGHLIGHT_MS = 1800;
 
 export function DecisionsHighlighter() {
+  const timeoutRef = useRef<number | null>(null);
+
   useEffect(() => {
     function onHighlight(e: Event) {
       const detail = (e as CustomEvent<{ decisionId: string }>).detail;
@@ -15,12 +17,21 @@ export function DecisionsHighlighter() {
       if (!el) return;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.classList.add("is-highlighted");
-      const t = window.setTimeout(() => el.classList.remove("is-highlighted"), HIGHLIGHT_MS);
-      return () => window.clearTimeout(t);
+      if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = window.setTimeout(() => {
+        el.classList.remove("is-highlighted");
+        timeoutRef.current = null;
+      }, HIGHLIGHT_MS);
     }
 
     window.addEventListener(HIGHLIGHT_EVENT, onHighlight);
-    return () => window.removeEventListener(HIGHLIGHT_EVENT, onHighlight);
+    return () => {
+      window.removeEventListener(HIGHLIGHT_EVENT, onHighlight);
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
   }, []);
 
   return null;

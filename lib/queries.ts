@@ -1587,9 +1587,9 @@ export async function getPassiveAlerts(): Promise<PassiveAlertData[]> {
 
 /**
  * Feed events (last N minutes) for the central "Fluxo da manhã" stream.
- * Pulls from `MaestroAction` + `Alert` so the Dashboard shows real activity
- * today. Pills (`decide`/`revê`/`feito`) are always `null` on F1; F2 wires
- * them up once `getOpenDecisions` has real data.
+ * Combines MaestroAction + Alert + resolved decisions <24h. Pills:
+ *   - decide/revê → action has an open decision via sourceMaestroActionId
+ *   - feito → decision resolved in the last 24h (persists in feed as signal)
  */
 export async function getFeedEvents(
   windowMinutes: number = FEED_DEFAULT_WINDOW_MINUTES,
@@ -1623,9 +1623,11 @@ export async function getFeedEvents(
     db.decision.findMany({
       where: {
         resolvedAt: null,
+        sourceMaestroActionId: { not: null },
         OR: [{ snoozedUntil: null }, { snoozedUntil: { lt: new Date(now) } }],
       },
       select: { id: true, sourceMaestroActionId: true, severity: true },
+      take: 200,
     }),
     db.decision.findMany({
       where: { resolvedAt: { gte: since24h } },
