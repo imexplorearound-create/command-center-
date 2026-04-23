@@ -179,6 +179,13 @@
   color: var(--muted);
 }
 
+.portiqa-theme .meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
 .portiqa-theme .pill {
   display: inline-flex;
   align-items: center;

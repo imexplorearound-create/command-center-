@@ -5,13 +5,8 @@ import { getServerT } from "@/lib/i18n/server";
 import { formatDateShort } from "@/lib/utils";
 import type { FeedbackSessionStatus } from "@/lib/types";
 import { SessionActions } from "./session-actions";
-
-const STATUS_COLORS: Record<FeedbackSessionStatus, string> = {
-  processing: "var(--warning, #D4883A)",
-  ready: "var(--success, #2D8A5E)",
-  reviewed: "var(--accent, #B08A2C)",
-  archived: "var(--muted, #8A8778)",
-};
+import { PageHeader } from "@/components/layout/page-header";
+import { FEEDBACK_STATUS_COLOR } from "@/lib/dashboard-helpers";
 
 interface SearchParams {
   archived?: string;
@@ -46,13 +41,11 @@ export default async function FeedbackPage({
   }
 
   return (
-    <div className="portiqa-theme" style={{ minHeight: "100%", padding: "28px 32px" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 24, marginBottom: 24 }}>
-        <div>
-          <div className="kicker" style={{ marginBottom: 8 }}>Feedback · Testers</div>
-          <h1 className="h1">{t("feedback.title")}</h1>
-          <p className="lede" style={{ marginTop: 8 }}>{t("feedback.subtitle")}</p>
-        </div>
+    <PageHeader
+      kicker="Feedback · Testers"
+      title={t("feedback.title")}
+      subtitle={t("feedback.subtitle")}
+      actions={
         <Link
           href={showArchived ? "/feedback" : "/feedback?archived=1"}
           className="mono"
@@ -60,8 +53,8 @@ export default async function FeedbackPage({
         >
           {t(showArchived ? "feedback.hide_archived" : "feedback.show_archived")}
         </Link>
-      </header>
-
+      }
+    >
       {sessions.length === 0 && (
         <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--muted)" }}>
           {t("feedback.empty")}
@@ -92,7 +85,7 @@ export default async function FeedbackPage({
                 }}
               />
               <span style={{ fontFamily: "var(--font-serif)", fontWeight: 600, fontSize: 16 }}>{project.name}</span>
-              <span className="mono" style={{ textTransform: "none" }}>
+              <span className="meta">
                 {t(
                   projectSessions.length === 1
                     ? "feedback.group_count_one"
@@ -104,7 +97,7 @@ export default async function FeedbackPage({
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, paddingLeft: 12 }}>
               {projectSessions.map((s) => {
                 const status = s.status as FeedbackSessionStatus;
-                const color = STATUS_COLORS[status] ?? STATUS_COLORS.processing;
+                const color = FEEDBACK_STATUS_COLOR[status] ?? FEEDBACK_STATUS_COLOR.processing;
                 const label = t(`feedback.status.${status}`);
                 return (
                   <div
@@ -117,17 +110,10 @@ export default async function FeedbackPage({
                       style={{ flex: 1, textDecoration: "none", color: "inherit" }}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span className="mono" style={{ textTransform: "none" }}>
-                          por {s.testerName}
-                        </span>
-                        <span
-                          className="mono"
-                          style={{ color, fontWeight: 600 }}
-                        >
-                          {label}
-                        </span>
+                        <span className="meta">por {s.testerName}</span>
+                        <span className="meta" style={{ color, fontWeight: 600 }}>{label}</span>
                       </div>
-                      <div className="mono" style={{ display: "flex", gap: 14, textTransform: "none" }}>
+                      <div className="meta" style={{ display: "flex", gap: 14 }}>
                         <span>{formatDateShort(s.createdAt.toISOString())}</span>
                         <span>{s.itemsCount} nota{s.itemsCount !== 1 ? "s" : ""}</span>
                         {s.durationSeconds && <span>{Math.round(s.durationSeconds / 60)}min</span>}
@@ -144,6 +130,6 @@ export default async function FeedbackPage({
           </details>
         ))}
       </div>
-    </div>
+    </PageHeader>
   );
 }

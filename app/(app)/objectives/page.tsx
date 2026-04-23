@@ -2,6 +2,7 @@ import { getOkrObjectives, getRoadmapItems } from "@/lib/queries";
 import { getAuthUser } from "@/lib/auth/dal";
 import { getTenantDb } from "@/lib/tenant";
 import { OkrTabs } from "./okr-tabs";
+import { PageHeader } from "@/components/layout/page-header";
 import { getServerT } from "@/lib/i18n/server";
 
 export default async function ObjectivesPage() {
@@ -21,18 +22,16 @@ export default async function ObjectivesPage() {
   ]);
 
   return (
-    <div className="portiqa-theme" style={{ minHeight: "100%", padding: "28px 32px" }}>
-      <header style={{ marginBottom: 24 }}>
-        <div className="kicker" style={{ marginBottom: 8 }}>Objectivos · OKRs</div>
-        <h1 className="h1">{t("objectives.title")}</h1>
-        <p className="lede" style={{ marginTop: 8 }}>{t("objectives.subtitle")}</p>
-      </header>
-
+    <PageHeader
+      kicker="Objectivos · OKRs"
+      title={t("objectives.title")}
+      subtitle={t("objectives.subtitle")}
+    >
       <OkrTabs
         objectives={objectives}
         roadmapItems={roadmapItems}
         projects={projects.map((p) => ({ id: p.id, name: p.name, slug: p.slug, color: p.color ?? "#888" }))}
       />
-    </div>
+    </PageHeader>
   );
 }

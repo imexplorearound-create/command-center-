@@ -43,3 +43,14 @@ export const SEVERITY_COLOR: Record<"block" | "warn" | "pend", string> = {
   warn: "var(--warning, #D4883A)",
   pend: "var(--accent, #B08A2C)",
 };
+
+/** Feedback session status palette used by /feedback (Portiqa tokens). */
+export const FEEDBACK_STATUS_COLOR: Record<
+  "processing" | "ready" | "reviewed" | "archived",
+  string
+> = {
+  processing: "var(--warning, #D4883A)",
+  ready: "var(--success, #2D8A5E)",
+  reviewed: "var(--accent, #B08A2C)",
+  archived: "var(--muted, #8A8778)",
+};
