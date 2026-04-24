@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/dal";
 import { getServerT } from "@/lib/i18n/server";
-import { Bot, Bell, Settings } from "lucide-react";
+import { Bot, Bell, Settings, KeyRound } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,16 @@ export default async function SettingsPage() {
               <Bot size={24} style={{ marginBottom: 8, color: "var(--cc-primary, #3b82f6)" }} />
               <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>{t("settings.llm")}</div>
               <div style={{ fontSize: 13, color: "#666" }}>Configurar fornecedor e modelo AI para o Maestro</div>
+            </div>
+          </Link>
+        )}
+
+        {isAdmin && (
+          <Link href="/settings/api-keys" style={{ textDecoration: "none" }}>
+            <div className="cc-card" style={{ padding: 20 }}>
+              <KeyRound size={24} style={{ marginBottom: 8, color: "var(--cc-primary, #3b82f6)" }} />
+              <div style={{ fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>API Keys · Dev</div>
+              <div style={{ fontSize: 13, color: "#666" }}>Tokens para o developer (Bruno) aceder a /api/dev/*</div>
             </div>
           </Link>
         )}
