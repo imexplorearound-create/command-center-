@@ -3,18 +3,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { basePrisma } from "@/lib/db";
 import { extractBearerToken } from "@/lib/auth/bearer";
+import type { DevApiKeyScope } from "@/lib/validation/dev-api-key-schema";
+
+export type { DevApiKeyScope };
 
 const TOKEN_PREFIX = "cc_dev_";
 const TOKEN_SECRET_BYTES = 24;
 const TOKEN_PREFIX_DISPLAY_LEN = 16;
 const LAST_USED_THROTTLE_MS = 60_000;
-
-export type DevApiKeyScope =
-  | "testsheets:read"
-  | "testsheets:write"
-  | "tasks:read"
-  | "tasks:write"
-  | "feedback:read";
 
 export type DevApiKeyContext = {
   keyId: string;

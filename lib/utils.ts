@@ -4,6 +4,7 @@ export const LOCALE = "pt-PT";
 
 const dateFormatterLong = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long", year: "numeric" });
 const dateFormatterShort = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short" });
+const dateTimeFormatter = new Intl.DateTimeFormat(LOCALE, { dateStyle: "short", timeStyle: "short" });
 const monthFormatter = new Intl.DateTimeFormat(LOCALE, { month: "short" });
 
 export function formatDate(date: Date | string): string {
@@ -12,6 +13,11 @@ export function formatDate(date: Date | string): string {
 
 export function formatDateShort(date: Date | string): string {
   return dateFormatterShort.format(new Date(date));
+}
+
+export function formatDateTime(date: Date | string | null | undefined): string {
+  if (!date) return "—";
+  return dateTimeFormatter.format(new Date(date));
 }
 
 export function formatMonth(date: Date | string): string {
