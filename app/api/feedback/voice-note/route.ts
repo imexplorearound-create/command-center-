@@ -17,6 +17,7 @@ import { join } from "path";
 import { decodeImageDataUrl } from "@/lib/feedback-utils";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildCorsHeaders, isAllowedOrigin } from "@/lib/cors";
+import { resolveTestCaseFromVoice } from "@/lib/feedback/resolve-test-case";
 
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get("origin");
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
   for (const key of [
     "sessionId", "projectSlug", "testerName",
     "pageUrl", "pageTitle", "timestampMs",
-    "cursorX", "cursorY",
+    "cursorX", "cursorY", "testCaseCode",
   ]) {
     const v = formData.get(key);
     if (typeof v === "string" && v.length > 0) raw[key] = v;
@@ -224,6 +225,27 @@ export async function POST(request: NextRequest) {
       ? { x: data.cursorX, y: data.cursorY }
       : undefined;
 
+  // Resolve TestCase: dropdown > single regex match > null. N matches
+  // ficam em FeedbackItem.mentionedTestCaseCodes para a triagem resolver
+  // a ambiguidade (coluna dedicada — não poluir contextSnapshot, que é
+  // um array consumido por extractExtraScreenshots + session-view).
+  const resolution = resolveTestCaseFromVoice({
+    dropdownCode: data.testCaseCode ?? null,
+    transcript,
+  });
+  let testCaseId: string | null = null;
+  if (resolution.kind === "explicit" || resolution.kind === "single") {
+    const match = await db.testCase.findFirst({
+      where: {
+        code: resolution.code,
+        archivedAt: null,
+        sheet: { projectId: project.id, archivedAt: null },
+      },
+      select: { id: true },
+    });
+    testCaseId = match?.id ?? null;
+  }
+
   await db.$transaction([
     db.feedbackItem.create({
       data: {
@@ -244,6 +266,8 @@ export async function POST(request: NextRequest) {
         aiSummary: aiResult?.summary ?? null,
         screenshotUrl,
         status: "pending",
+        testCaseId,
+        mentionedTestCaseCodes: resolution.mentionedCodes,
       },
     }),
     db.feedbackSession.update({

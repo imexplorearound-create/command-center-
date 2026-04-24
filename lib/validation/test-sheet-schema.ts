@@ -1,11 +1,20 @@
 import { z } from "zod";
 
-const code = z
+/**
+ * Formato do código de TestCase: letras, números, . _ - (ex: T-042, login.v2).
+ * Partilhado entre a criação de TestCase (via Dev API) e o `testCaseCode` enviado
+ * pela extension no upload de voice-note.
+ */
+export const TEST_CASE_CODE_REGEX = /^[A-Za-z0-9._-]+$/;
+
+export const testCaseCodeSchema = z
   .string()
   .trim()
   .min(1)
   .max(20)
-  .regex(/^[A-Za-z0-9._-]+$/, "Código só pode ter letras, números, . _ -");
+  .regex(TEST_CASE_CODE_REGEX, "Código só pode ter letras, números, . _ -");
+
+const code = testCaseCodeSchema;
 
 const title = z.string().trim().min(1).max(300);
 const description = z.string().trim().max(5000).optional().nullable();
