@@ -161,9 +161,10 @@
   font-size: 13px;
   color: #222;
 }
-.cc-feedback-picker-row:hover {
+.cc-feedback-picker-row:hover,
+.cc-feedback-picker-row--active {
   background: #ececef;
-  border-color: #d0d0d5;
+  border-color: #3b82f6;
 }
 .cc-feedback-picker-code {
   font-family: monospace;

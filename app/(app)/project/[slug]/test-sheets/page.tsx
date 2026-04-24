@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, FileText } from "lucide-react";
 import { getAuthUser } from "@/lib/auth/dal";
+import { canReadProject } from "@/lib/auth/roles";
 import { getTenantDb } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,7 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
   });
   if (!project) notFound();
 
-  if (user.role === "cliente" && !user.projectIds.includes(project.id)) {
-    redirect("/");
-  }
+  if (!canReadProject(user, project.id)) redirect("/");
 
   const sheets = await db.testSheet.findMany({
     where: { projectId: project.id, archivedAt: null },
