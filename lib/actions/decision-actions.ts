@@ -80,8 +80,11 @@ export async function resolveDecision(
     where: { id: parsed.data.decisionId },
     data: {
       resolvedAt: new Date(),
-      resolvedById: user?.personId ?? null,
+      resolvedBy: user?.personId
+        ? { connect: { id: user.personId } }
+        : { disconnect: true },
       resolutionNote: parsed.data.resolutionNote ?? null,
+      resolutionSource: "human",
     },
   });
 
@@ -112,10 +115,14 @@ export async function snoozeDecision(
   return { success: true };
 }
 
+// DB1 (fechada 23 Abr 2026): reabrir NÃO limpa `resolvedAt` da antiga.
+// Em vez disso cria nova row com mesma chave natural e a antiga guarda
+// `reopenedById: <newId>`. Preserva histórico do feed "Resolvidas 24h"
+// e habilita analytics de ciclo-de-vida.
 export async function reopenDecision(
-  _prev: ActionResult | undefined,
+  _prev: ActionResult<{ id: string }> | undefined,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<{ id: string }>> {
   const auth = await requireWriter();
   if (!auth.ok) return { error: auth.error };
 
@@ -125,13 +132,52 @@ export async function reopenDecision(
   if (!parsed.success) return { error: firstZodError(parsed.error) };
 
   const db = await getTenantDb();
-  await db.decision.update({
+  const old = await db.decision.findUnique({
     where: { id: parsed.data.decisionId },
-    data: { resolvedAt: null, resolvedById: null, resolutionNote: null },
+    select: {
+      id: true,
+      title: true,
+      context: true,
+      kind: true,
+      severity: true,
+      crewRoleId: true,
+      dueAt: true,
+      projectId: true,
+      opportunityId: true,
+      taskId: true,
+      sourceMaestroActionId: true,
+      feedbackItemId: true,
+      reopenedById: true,
+    },
+  });
+  if (!old) return { error: "Decisão não encontrada" };
+  // A cadeia é linear: A → B → C. Quando se reabre A cria-se B; se B
+  // for resolvida e reaberta cria-se C. O que este guard impede é
+  // reabrir A duas vezes (criaria duas sucessoras a competir pelo
+  // estado "vivo"). A sucessora pode ser reaberta normalmente.
+  if (old.reopenedById) return { error: "Esta decisão já foi reaberta" };
+
+  // Destructure para copiar TODOS os campos herdáveis. Se o schema ganhar
+  // novo campo (ex. `assignedToRoleId`) e estiver no `select` acima, é
+  // propagado automaticamente para a nova row — fail-safe com schema
+  // growth (vs. enumerar à mão e arriscar esquecer). Excluímos
+  // `id` (auto) e `reopenedById` (nova começa sem sucessora).
+  const { id: _oldId, reopenedById: _oldReopenedBy, ...inheritable } = old;
+  void _oldId;
+  void _oldReopenedBy;
+
+  const next = await db.decision.create({
+    data: { ...inheritable, tenantId: "" },
+    select: { id: true },
+  });
+
+  await db.decision.update({
+    where: { id: old.id },
+    data: { reopenedBy: { connect: { id: next.id } } },
   });
 
   revalidatePath("/");
-  return { success: true };
+  return { success: true, data: { id: next.id } };
 }
 
 // ─── Recompute ────────────────────────────────────────────────────
@@ -291,6 +337,7 @@ export async function recomputeDecisions(): Promise<
       data: {
         resolvedAt: new Date(),
         resolutionNote: "Auto-resolvido: condição já não se verifica.",
+        resolutionSource: "auto",
       },
     });
   }

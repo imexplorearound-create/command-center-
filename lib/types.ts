@@ -573,6 +573,7 @@ export interface ResolvedDecisionData extends OpenDecisionData {
   resolvedAt: string;
   resolvedByName: string | null;
   resolutionNote: string | null;
+  resolutionSource: "auto" | "human" | null;
 }
 
 export interface PassiveAlertData {

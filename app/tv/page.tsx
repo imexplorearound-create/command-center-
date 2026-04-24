@@ -17,6 +17,7 @@ import {
   getPassiveAlerts,
   getFeedEvents,
 } from "@/lib/queries";
+import { buildHeroSignals } from "@/lib/dashboard-helpers";
 import { getAuthUser } from "@/lib/auth/dal";
 import { redirect } from "next/navigation";
 
@@ -52,6 +53,11 @@ export default async function TvPage() {
 
   const activeProjects = projects.filter((p) => p.status === "ativo").slice(0, 10);
   const firstName = user.name.split(" ")[0] ?? user.name;
+  const heroSignals = buildHeroSignals({
+    userName: firstName,
+    decisions,
+    projectsAtRiskCount: projectsAtRisk.length,
+  });
 
   return (
     <div
@@ -65,10 +71,10 @@ export default async function TvPage() {
         color: "var(--ink)",
       }}
     >
-      <CrewColumn crew={crew} autonomy={autonomy} />
+      <CrewColumn crew={crew} autonomy={autonomy} readOnly />
 
       <main style={{ padding: "8px 32px 32px", overflow: "auto" }}>
-        <Hero userName={firstName} openDecisionsCount={decisions.length} />
+        <Hero signals={heroSignals} readOnly />
         <MetricsStrip
           projectsAtRisk={projectsAtRisk.length}
           openDecisions={decisions.length}

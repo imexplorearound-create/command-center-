@@ -37,7 +37,26 @@ const RESOLVED: ResolvedDecisionData = {
   resolvedAt: new Date().toISOString(),
   resolvedByName: "Miguel",
   resolutionNote: "Release ficou 'Phoenix'",
+  resolutionSource: "human",
 };
+
+const AUTO_RESOLVED: ResolvedDecisionData = {
+  ...RESOLVED,
+  id: "dec-auto",
+  title: "Oportunidade voltou a mexer",
+  resolvedByName: null,
+  resolutionNote: "Auto-resolvido: condição já não se verifica.",
+  resolutionSource: "auto",
+};
+
+describe("DecisionsColumn — hooks cross-component (F3 Passo F)", () => {
+  it("marca o <section> com data-focus-target='decisions' para o Highlighter", () => {
+    const { container } = render(<DecisionsColumn decisions={[DEC]} />);
+    const section = container.querySelector('[data-focus-target="decisions"]');
+    expect(section).not.toBeNull();
+    expect(section?.tagName).toBe("SECTION");
+  });
+});
 
 describe("DecisionsColumn — readOnly mode", () => {
   it("não renderiza o botão de resolver quando readOnly=true", () => {
@@ -96,5 +115,56 @@ describe("DecisionsColumn — modo interactivo (default)", () => {
     render(<DecisionsColumn decisions={[]} resolved={[RESOLVED]} viewing="resolved" />);
     expect(screen.getByText(RESOLVED.title)).toBeTruthy();
     expect(screen.getByText(/Miguel/)).toBeTruthy();
+  });
+
+  it("decisão resolvida pelo humano NÃO mostra badge 'auto'", () => {
+    render(<DecisionsColumn decisions={[]} resolved={[RESOLVED]} viewing="resolved" />);
+    expect(screen.queryByText(/^auto$/)).toBeNull();
+  });
+
+  it("decisão auto-resolvida (Maestro) MOSTRA badge 'auto' (F3 Passo E)", () => {
+    render(<DecisionsColumn decisions={[]} resolved={[AUTO_RESOLVED]} viewing="resolved" />);
+    const badge = screen.getByText(/^auto$/);
+    expect(badge).toBeTruthy();
+    expect(badge.getAttribute("title")).toContain("automaticamente");
+  });
+});
+
+describe("DecisionsColumn — toggle de ordenação (DB3)", () => {
+  it("mostra toggle 'maestro · recentes' quando viewing='open'", () => {
+    render(<DecisionsColumn decisions={[DEC]} viewing="open" sort="maestro" />);
+    const nav = screen.getByRole("navigation", { name: /ordenação das decis/i });
+    const links = nav.querySelectorAll("a");
+    expect(links.length).toBe(2);
+    expect(nav.textContent).toContain("maestro");
+    expect(nav.textContent).toContain("recentes");
+  });
+
+  it("esconde o toggle de ordenação em viewing='resolved'", () => {
+    render(<DecisionsColumn decisions={[]} resolved={[RESOLVED]} viewing="resolved" />);
+    expect(screen.queryByRole("navigation", { name: /ordenação/i })).toBeNull();
+  });
+
+  it("esconde o toggle de ordenação em readOnly", () => {
+    render(<DecisionsColumn decisions={[DEC]} readOnly />);
+    expect(screen.queryByRole("navigation", { name: /ordenação/i })).toBeNull();
+  });
+
+  it("link 'recentes' aponta para ?sort=recent (shareable)", () => {
+    render(<DecisionsColumn decisions={[DEC]} viewing="open" sort="maestro" />);
+    const nav = screen.getByRole("navigation", { name: /ordenação/i });
+    const recentLink = Array.from(nav.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("recentes"),
+    );
+    expect(recentLink?.getAttribute("href")).toBe("/?sort=recent");
+  });
+
+  it("link 'maestro' aponta para / (reset para default)", () => {
+    render(<DecisionsColumn decisions={[DEC]} viewing="open" sort="recent" />);
+    const nav = screen.getByRole("navigation", { name: /ordenação/i });
+    const maestroLink = Array.from(nav.querySelectorAll("a")).find(
+      (a) => a.textContent?.includes("maestro"),
+    );
+    expect(maestroLink?.getAttribute("href")).toBe("/");
   });
 });

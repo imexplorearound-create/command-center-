@@ -19,12 +19,13 @@ import {
   getPassiveAlerts,
   getFeedEvents,
 } from "@/lib/queries";
+import { buildHeroSignals } from "@/lib/dashboard-helpers";
 import { getAuthUser } from "@/lib/auth/dal";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = { decisions?: string };
+type SearchParams = { decisions?: string; sort?: string };
 
 export default async function DashboardPage({
   searchParams,
@@ -35,6 +36,7 @@ export default async function DashboardPage({
   if (!user) redirect("/login");
 
   const decisionsView = sp.decisions === "resolved" ? "resolved" : "open";
+  const decisionsSort = sp.sort === "recent" ? "recent" : "maestro";
 
   const [
     crew,
@@ -53,7 +55,7 @@ export default async function DashboardPage({
     getAutonomy7d(),
     getProjects(user),
     getProjectsAtRisk(),
-    getOpenDecisions(),
+    getOpenDecisions({ sort: decisionsSort }),
     decisionsView === "resolved" ? getResolvedDecisions24h() : Promise.resolve([]),
     getPendingFeedback(),
     getDevVelocity(),
@@ -64,6 +66,11 @@ export default async function DashboardPage({
 
   const activeProjects = projects.filter((p) => p.status === "ativo").slice(0, 10);
   const firstName = user.name.split(" ")[0] ?? user.name;
+  const heroSignals = buildHeroSignals({
+    userName: firstName,
+    decisions,
+    projectsAtRiskCount: projectsAtRisk.length,
+  });
 
   return (
     <div
@@ -80,7 +87,7 @@ export default async function DashboardPage({
       <CrewColumn crew={crew} autonomy={autonomy} />
 
       <main style={{ padding: "8px 32px 32px", overflow: "auto" }}>
-        <Hero userName={firstName} openDecisionsCount={decisions.length} />
+        <Hero signals={heroSignals} />
         <MetricsStrip
           projectsAtRisk={projectsAtRisk.length}
           openDecisions={decisions.length}
@@ -104,6 +111,7 @@ export default async function DashboardPage({
           decisions={decisions}
           resolved={resolvedDecisions}
           viewing={decisionsView}
+          sort={decisionsSort}
         />
         <AlertsPassive alerts={alerts} />
         <TvCard />

@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { OPEN_MAESTRO_EVENT, useDashboardEvent } from "@/lib/dashboard-events";
 
 interface MaestroContextValue {
   open: boolean;
@@ -12,6 +13,9 @@ interface MaestroContextValue {
 
 const MaestroCtx = createContext<MaestroContextValue | null>(null);
 
+// Re-export para compatibilidade — canonical é `@/lib/dashboard-events`.
+export { OPEN_MAESTRO_EVENT };
+
 export function MaestroProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -19,6 +23,10 @@ export function MaestroProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(() => setOpen((v) => !v), []);
   const close = useCallback(() => setOpen(false), []);
   const newConversation = useCallback(() => setConversationId(null), []);
+
+  // `useDashboardEvent` usa AbortController no cleanup — previne listeners
+  // duplos caso o provider re-mounte (logout/login, mudanças de sub-tree).
+  useDashboardEvent(OPEN_MAESTRO_EVENT, () => setOpen(true));
 
   return (
     <MaestroCtx.Provider

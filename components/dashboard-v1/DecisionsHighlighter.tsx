@@ -1,38 +1,44 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { HIGHLIGHT_EVENT } from "./FeedPills";
+import {
+  HIGHLIGHT_DECISION_EVENT,
+  FOCUS_DECISIONS_EVENT,
+  useDashboardEvent,
+} from "@/lib/dashboard-events";
 
 const HIGHLIGHT_MS = 1800;
 
 export function DecisionsHighlighter() {
   const timeoutRef = useRef<number | null>(null);
 
+  // Cleanup do timeout pendente quando o componente desmontar.
   useEffect(() => {
-    function onHighlight(e: Event) {
-      const detail = (e as CustomEvent<{ decisionId: string }>).detail;
-      const id = detail?.decisionId;
-      if (!id) return;
-      const el = document.querySelector<HTMLElement>(`[data-decision-id="${id}"]`);
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("is-highlighted");
-      if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = window.setTimeout(() => {
-        el.classList.remove("is-highlighted");
-        timeoutRef.current = null;
-      }, HIGHLIGHT_MS);
-    }
-
-    window.addEventListener(HIGHLIGHT_EVENT, onHighlight);
     return () => {
-      window.removeEventListener(HIGHLIGHT_EVENT, onHighlight);
       if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
     };
   }, []);
+
+  useDashboardEvent(HIGHLIGHT_DECISION_EVENT, ({ decisionId }) => {
+    const el = document.querySelector<HTMLElement>(`[data-decision-id="${decisionId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("is-highlighted");
+    if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = window.setTimeout(() => {
+      el.classList.remove("is-highlighted");
+      timeoutRef.current = null;
+    }, HIGHLIGHT_MS);
+  });
+
+  useDashboardEvent(FOCUS_DECISIONS_EVENT, () => {
+    const el = document.querySelector<HTMLElement>('[data-focus-target="decisions"]');
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 
   return null;
 }

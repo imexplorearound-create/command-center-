@@ -1,12 +1,14 @@
 import { AgentGlyph, HealthIndicator, ExecutorBadge, STATE_COLOR } from "@/components/cc/atoms";
 import type { CrewRoleCardData, AutonomyData } from "@/lib/types";
+import { InlineActionButton } from "./InlineActionButton";
 
 type Props = {
   crew: CrewRoleCardData[];
   autonomy: AutonomyData;
+  readOnly?: boolean;
 };
 
-export function CrewColumn({ crew, autonomy }: Props) {
+export function CrewColumn({ crew, autonomy, readOnly = false }: Props) {
   return (
     <aside
       className="portiqa-theme"
@@ -21,7 +23,7 @@ export function CrewColumn({ crew, autonomy }: Props) {
     >
       <MaestroBlock />
       {crew.map((role) => (
-        <RoleCard key={role.slug} role={role} />
+        <RoleCard key={role.slug} role={role} readOnly={readOnly} />
       ))}
       <div style={{ flex: 1 }} />
       <AutonomyMeter autonomy={autonomy} />
@@ -75,7 +77,11 @@ function MaestroBlock() {
   );
 }
 
-function RoleCard({ role }: { role: CrewRoleCardData }) {
+function RoleCard({ role, readOnly }: { role: CrewRoleCardData; readOnly: boolean }) {
+  // F3 Passo F: lastLine clicável quando há algo accionável (pending) e
+  // não estamos em TV. Abre o painel do Maestro com o slug do papel no
+  // contexto (a conversa pode ser pré-alimentada em passo futuro).
+  const lastLineClickable = !readOnly && role.state === "pending" && role.lastLine !== null;
   return (
     <div
       className="card"
@@ -137,7 +143,17 @@ function RoleCard({ role }: { role: CrewRoleCardData }) {
       </div>
       {role.lastLine ? (
         <p className="meta" style={{ margin: "8px 0 0" }}>
-          {role.lastLine}
+          {lastLineClickable ? (
+            <InlineActionButton
+              action={{ kind: "open-maestro", context: { crewRoleSlug: role.slug } }}
+              aria-label={`Abrir Maestro sobre ${role.name}`}
+              style={{ borderBottom: "1px dotted var(--muted)" }}
+            >
+              {role.lastLine}
+            </InlineActionButton>
+          ) : (
+            role.lastLine
+          )}
         </p>
       ) : null}
       <div

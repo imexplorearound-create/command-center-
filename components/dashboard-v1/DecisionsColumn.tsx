@@ -4,42 +4,66 @@ import { SEVERITY_COLOR, formatSince } from "@/lib/dashboard-helpers";
 import type { OpenDecisionData, ResolvedDecisionData } from "@/lib/types";
 import { DecisionsHighlighter } from "./DecisionsHighlighter";
 import { DecisionResolveButton } from "./DecisionResolveButton";
+import { DecisionSnoozeButton } from "./DecisionSnoozeButton";
 
 type Props = {
   decisions: OpenDecisionData[];
   resolved?: ResolvedDecisionData[];
   viewing?: "open" | "resolved";
+  sort?: "maestro" | "recent";
   readOnly?: boolean;
 };
 
-export function DecisionsColumn({ decisions, resolved = [], viewing = "open", readOnly = false }: Props) {
+export function DecisionsColumn({
+  decisions,
+  resolved = [],
+  viewing = "open",
+  sort = "maestro",
+  readOnly = false,
+}: Props) {
   const isResolved = !readOnly && viewing === "resolved";
   const expanded = decisions.slice(0, 3);
   const overflow = decisions.slice(3);
+  const showSortToggle = !readOnly && !isResolved;
 
   return (
-    <section>
+    <section data-focus-target="decisions">
       {readOnly ? null : <DecisionsHighlighter />}
-      <header style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, gap: 8 }}>
-        <Kicker>Decisões</Kicker>
-        {readOnly ? (
-          <span className="mono" style={{ color: "var(--muted)", fontSize: 11 }}>
-            abertas · {decisions.length}
-          </span>
-        ) : (
-          <nav style={{ display: "flex", gap: 6 }} aria-label="vista das decisões">
+      <header style={{ display: "flex", flexDirection: "column", alignItems: "stretch", marginBottom: 12, gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+          <Kicker>Decisões</Kicker>
+          {readOnly ? (
+            <span className="mono" style={{ color: "var(--muted)", fontSize: 11 }}>
+              abertas · {decisions.length}
+            </span>
+          ) : (
+            <nav style={{ display: "flex", gap: 6 }} aria-label="vista das decisões">
+              <ToggleLink
+                href="/"
+                active={!isResolved}
+                label={isResolved ? "abertas" : `abertas · ${decisions.length}`}
+              />
+              <ToggleLink
+                href="/?decisions=resolved"
+                active={isResolved}
+                label={isResolved ? `resolvidas · ${resolved.length}` : "resolvidas"}
+              />
+            </nav>
+          )}
+        </div>
+        {showSortToggle ? (
+          <nav
+            style={{ display: "flex", gap: 6, alignSelf: "flex-end" }}
+            aria-label="ordenação das decisões"
+          >
+            <ToggleLink href="/" active={sort === "maestro"} label="maestro" />
             <ToggleLink
-              href="/"
-              active={!isResolved}
-              label={isResolved ? "abertas" : `abertas · ${decisions.length}`}
-            />
-            <ToggleLink
-              href="/?decisions=resolved"
-              active={isResolved}
-              label={isResolved ? `resolvidas · ${resolved.length}` : "resolvidas"}
+              href="/?sort=recent"
+              active={sort === "recent"}
+              label="recentes"
             />
           </nav>
-        )}
+        ) : null}
       </header>
 
       {isResolved ? (
@@ -154,8 +178,9 @@ function ExpandedDecisionCard({ decision, readOnly }: { decision: OpenDecisionDa
         </p>
       ) : null}
       {readOnly ? null : (
-        <footer style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <footer style={{ display: "flex", gap: 8, marginTop: 4, alignItems: "flex-start" }}>
           <DecisionResolveButton decisionId={decision.id} />
+          <DecisionSnoozeButton decisionId={decision.id} />
         </footer>
       )}
     </article>
@@ -224,9 +249,27 @@ function ResolvedList({ resolved }: { resolved: ResolvedDecisionData[] }) {
               >
                 {d.title}
               </span>
-              <span className="mono" style={{ color: "var(--muted)" }}>
-                {ago}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {d.resolutionSource === "auto" ? (
+                  <span
+                    className="mono"
+                    title="Resolvido automaticamente pelo Maestro"
+                    style={{
+                      fontSize: 9,
+                      padding: "1px 6px",
+                      borderRadius: 999,
+                      background: "color-mix(in oklch, var(--accent) 14%, transparent)",
+                      color: "var(--accent)",
+                      border: "1px solid color-mix(in oklch, var(--accent) 30%, transparent)",
+                    }}
+                  >
+                    auto
+                  </span>
+                ) : null}
+                <span className="mono" style={{ color: "var(--muted)" }}>
+                  {ago}
+                </span>
+              </div>
             </div>
             {d.resolutionNote ? (
               <p className="meta" style={{ margin: 0 }}>

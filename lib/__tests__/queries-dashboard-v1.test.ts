@@ -9,6 +9,7 @@ import {
   computeCrewLoad,
   formatSince,
   CREW_LOAD_CAP,
+  buildHeroSignals,
 } from "../dashboard-helpers";
 
 describe("calcAutonomyPercent", () => {
@@ -172,5 +173,60 @@ describe("formatSince", () => {
 
   it("returns days for a day or more", () => {
     expect(formatSince(2 * 24 * 60 * 60 * 1000)).toBe("há 2d");
+  });
+});
+
+describe("buildHeroSignals", () => {
+  const now = new Date("2026-04-23T14:30:00Z"); // 14h UTC → afternoon
+
+  it("conta openDecisions como total e blockDecisions como subset", () => {
+    const signals = buildHeroSignals({
+      userName: "Miguel",
+      decisions: [
+        { severity: "block" },
+        { severity: "warn" },
+        { severity: "block" },
+        { severity: "pend" },
+      ],
+      projectsAtRiskCount: 2,
+      now,
+    });
+    expect(signals.userName).toBe("Miguel");
+    expect(signals.openDecisions).toBe(4);
+    expect(signals.blockDecisions).toBe(2);
+    expect(signals.projectsAtRisk).toBe(2);
+  });
+
+  it("lista vazia → openDecisions=0 e blockDecisions=0", () => {
+    const signals = buildHeroSignals({
+      userName: "Miguel",
+      decisions: [],
+      projectsAtRiskCount: 0,
+      now,
+    });
+    expect(signals.openDecisions).toBe(0);
+    expect(signals.blockDecisions).toBe(0);
+  });
+
+  it("captura hourOfDay do `now` injectado (determinismo em tests)", () => {
+    const signals = buildHeroSignals({
+      userName: "x",
+      decisions: [],
+      projectsAtRiskCount: 0,
+      now: new Date("2026-04-23T09:00:00Z"),
+    });
+    // getHours() retorna na timezone local — o teste apenas garante que o
+    // valor vem do `now` injectado, não de `new Date()` escondido.
+    expect(signals.hourOfDay).toBe(new Date("2026-04-23T09:00:00Z").getHours());
+  });
+
+  it("sem `now` cai para `new Date()` em runtime", () => {
+    const signals = buildHeroSignals({
+      userName: "x",
+      decisions: [],
+      projectsAtRiskCount: 0,
+    });
+    expect(signals.hourOfDay).toBeGreaterThanOrEqual(0);
+    expect(signals.hourOfDay).toBeLessThanOrEqual(23);
   });
 });

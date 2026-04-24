@@ -688,11 +688,19 @@ model Decision {
   resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
   resolvedById          String?   @map("resolved_by") @db.Uuid
   resolutionNote        String?   @map("resolution_note") @db.Text
+  // F3 Passo E: "auto" (recompute detectou sinal fora) | "human" (resolve
+  // manual) | null (legacy pre-F3). Permite feed "Resolvidas 24h" mostrar
+  // badge e analytics separarem ciclos automáticos de humanos.
+  resolutionSource      String?   @map("resolution_source") @db.VarChar(10)
   projectId             String?   @map("project_id") @db.Uuid
   opportunityId         String?   @map("opportunity_id") @db.Uuid
   taskId                String?   @map("task_id") @db.Uuid
   sourceMaestroActionId String?   @map("source_maestro_action_id") @db.Uuid
   feedbackItemId        String?   @map("feedback_item_id") @db.Uuid
+  // DB1 (fechada 23 Abr 2026): quando uma Decision é reaberta, cria-se
+  // nova row e a antiga guarda aqui o id da sucessora. Preserva histórico
+  // do feed "Resolvidas 24h" e habilita analytics de ciclo-de-vida.
+  reopenedById          String?   @map("reopened_by") @db.Uuid
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -704,6 +712,8 @@ model Decision {
   resolvedBy          Person?        @relation("DecisionResolvedBy", fields: [resolvedById], references: [id])
   sourceMaestroAction MaestroAction? @relation("DecisionSource", fields: [sourceMaestroActionId], references: [id])
   feedbackItem        FeedbackItem?  @relation("DecisionFeedback", fields: [feedbackItemId], references: [id])
+  reopenedBy          Decision?      @relation("DecisionReopen", fields: [reopenedById], references: [id])
+  reopenedFrom        Decision[]     @relation("DecisionReopen")
 
   @@index([tenantId, resolvedAt], map: "idx_decisions_tenant_resolved")
   @@index([tenantId, crewRoleId, resolvedAt], map: "idx_decisions_tenant_crew_resolved")

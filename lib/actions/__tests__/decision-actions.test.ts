@@ -131,7 +131,7 @@ describe("resolveDecision", () => {
     expect(r).toEqual({ error: "Sem permissão" });
   });
 
-  it("marca resolvedAt + resolvedById + nota", async () => {
+  it("marca resolvedAt + resolvedBy + nota + resolutionSource='human'", async () => {
     mocks.decision.update.mockResolvedValue({});
     const fd = new FormData();
     fd.set("decisionId", VALID_UUID);
@@ -141,8 +141,9 @@ describe("resolveDecision", () => {
     const call = mocks.decision.update.mock.calls[0]![0];
     expect(call.where).toEqual({ id: VALID_UUID });
     expect(call.data.resolvedAt).toBeInstanceOf(Date);
-    expect(call.data.resolvedById).toBe("person-1");
+    expect(call.data.resolvedBy).toEqual({ connect: { id: "person-1" } });
     expect(call.data.resolutionNote).toBe("Resolvido em call");
+    expect(call.data.resolutionSource).toBe("human");
   });
 
   it("rejeita decisionId inválido", async () => {
@@ -173,18 +174,88 @@ describe("snoozeDecision", () => {
   });
 });
 
-describe("reopenDecision", () => {
-  it("limpa resolvedAt + resolvedById + resolutionNote", async () => {
+describe("reopenDecision (DB1: cria nova row + liga via reopenedById)", () => {
+  const NEW_UUID = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+  const OLD_SHAPE = {
+    id: VALID_UUID,
+    title: "Decidir preço final",
+    context: "Cliente pediu desconto",
+    kind: "budget",
+    severity: "warn",
+    crewRoleId: "role-1",
+    dueAt: null,
+    projectId: "proj-1",
+    opportunityId: null,
+    taskId: null,
+    sourceMaestroActionId: null,
+    feedbackItemId: null,
+    reopenedById: null,
+  };
+
+  it("cria nova Decision com campos copiados e guarda reopenedById na antiga", async () => {
+    mocks.decision.findUnique.mockResolvedValue(OLD_SHAPE);
+    mocks.decision.create.mockResolvedValue({ id: NEW_UUID });
     mocks.decision.update.mockResolvedValue({});
+
     const fd = new FormData();
     fd.set("decisionId", VALID_UUID);
     const r = await reopenDecision(undefined, fd);
-    expect(r).toEqual({ success: true });
-    expect(mocks.decision.update.mock.calls[0]![0].data).toEqual({
-      resolvedAt: null,
-      resolvedById: null,
-      resolutionNote: null,
+
+    expect(r).toEqual({ success: true, data: { id: NEW_UUID } });
+
+    // Copia campos da antiga para a nova
+    const createCall = mocks.decision.create.mock.calls[0]![0];
+    expect(createCall.data.title).toBe(OLD_SHAPE.title);
+    expect(createCall.data.kind).toBe(OLD_SHAPE.kind);
+    expect(createCall.data.severity).toBe(OLD_SHAPE.severity);
+    expect(createCall.data.crewRoleId).toBe(OLD_SHAPE.crewRoleId);
+    expect(createCall.data.projectId).toBe(OLD_SHAPE.projectId);
+    // Nova não herda `resolvedAt`/`resolvedById` — começa como aberta.
+    expect(createCall.data.resolvedAt).toBeUndefined();
+    expect(createCall.data.resolvedById).toBeUndefined();
+
+    // A antiga mantém `resolvedAt`/`resolvedById` intactos — só adquire `reopenedBy`.
+    const updateCall = mocks.decision.update.mock.calls[0]![0];
+    expect(updateCall.where).toEqual({ id: VALID_UUID });
+    expect(updateCall.data).toEqual({ reopenedBy: { connect: { id: NEW_UUID } } });
+  });
+
+  it("rejeita se a decisão não existir", async () => {
+    mocks.decision.findUnique.mockResolvedValue(null);
+    const fd = new FormData();
+    fd.set("decisionId", VALID_UUID);
+    const r = await reopenDecision(undefined, fd);
+    expect(r).toEqual({ error: "Decisão não encontrada" });
+    expect(mocks.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("rejeita se a decisão já foi reaberta (evita cadeia duplicada)", async () => {
+    mocks.decision.findUnique.mockResolvedValue({
+      ...OLD_SHAPE,
+      reopenedById: "existing-successor-id",
     });
+    const fd = new FormData();
+    fd.set("decisionId", VALID_UUID);
+    const r = await reopenDecision(undefined, fd);
+    expect(r).toEqual({ error: "Esta decisão já foi reaberta" });
+    expect(mocks.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("devolve erro se caller não for writer", async () => {
+    mocks.requireWriter.mockResolvedValueOnce({ ok: false, error: "Sem permissão" });
+    const fd = new FormData();
+    fd.set("decisionId", VALID_UUID);
+    const r = await reopenDecision(undefined, fd);
+    expect(r).toEqual({ error: "Sem permissão" });
+    expect(mocks.decision.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita decisionId inválido", async () => {
+    const fd = new FormData();
+    fd.set("decisionId", "not-a-uuid");
+    const r = await reopenDecision(undefined, fd);
+    expect(r).toHaveProperty("error");
+    expect(mocks.decision.findUnique).not.toHaveBeenCalled();
   });
 });
 
@@ -232,6 +303,7 @@ describe("recomputeDecisions", () => {
       data: {
         resolvedAt: expect.any(Date),
         resolutionNote: "Auto-resolvido: condição já não se verifica.",
+        resolutionSource: "auto",
       },
     });
   });

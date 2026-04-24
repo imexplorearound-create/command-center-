@@ -1161,9 +1161,9 @@ import {
   CREW_LIVE_MS,
   computeCrewState,
   computeCrewLoad,
-  formatSince,
 } from "./dashboard-helpers";
 import { narrateAlert } from "./maestro/alert-narrator";
+import { selectCrewPhrase } from "./maestro/voice/selector";
 
 export async function getCrew(): Promise<CrewRoleCardData[]> {
   const db = await getTenantDb();
@@ -1213,8 +1213,14 @@ export async function getCrew(): Promise<CrewRoleCardData[]> {
     const last = lastActionByRole.get(r.id);
     const msSince = last ? now - last.at.getTime() : null;
     const state = computeCrewState(msSince, pending);
-    const lastLine =
-      last && msSince !== null ? `${last.type} · ${formatSince(msSince)}` : null;
+    // F3 Voz (Passo B): substitui o log técnico por frase humana via
+    // `selectCrewPhrase`. `lastProject` fica null por agora — enriquecer
+    // com join a MaestroAction.projectId é trabalho do Passo C.
+    const lastLine = selectCrewPhrase({
+      state,
+      pendingDecisions: pending,
+      lastProject: null,
+    });
     return {
       roleId: r.id,
       slug: r.slug as CrewRoleSlug,
@@ -1294,7 +1300,11 @@ export async function getProjectsAtRisk(): Promise<ProjectAtRiskData[]> {
  * Open decisions for the right-hand column — only the ones currently
  * actionable (not resolved, not snoozed into the future).
  */
-export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> {
+export type DecisionSortMode = "maestro" | "recent";
+
+export async function getOpenDecisions(
+  { sort = "maestro", limit = 20 }: { sort?: DecisionSortMode; limit?: number } = {},
+): Promise<OpenDecisionData[]> {
   const db = await getTenantDb();
   const now = new Date();
   const rows = await db.decision.findMany({
@@ -1316,14 +1326,19 @@ export async function getOpenDecisions(limit = 20): Promise<OpenDecisionData[]> 
     take: limit,
   });
 
-  rows.sort((a, b) => {
-    const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
-    if (sev !== 0) return sev;
-    if (!a.dueAt && !b.dueAt) return 0;
-    if (!a.dueAt) return 1;
-    if (!b.dueAt) return -1;
-    return a.dueAt.getTime() - b.dueAt.getTime();
-  });
+  // "recent" devolve na ordem da query (createdAt DESC). "maestro" (default)
+  // re-ordena por severidade + dueAt — invariante para a F3 priorização
+  // inteligente; F3 Passo E poderá enriquecer com priority+confidence.
+  if (sort === "maestro") {
+    rows.sort((a, b) => {
+      const sev = (DECISION_SEVERITY_RANK[b.severity] ?? 0) - (DECISION_SEVERITY_RANK[a.severity] ?? 0);
+      if (sev !== 0) return sev;
+      if (!a.dueAt && !b.dueAt) return 0;
+      if (!a.dueAt) return 1;
+      if (!b.dueAt) return -1;
+      return a.dueAt.getTime() - b.dueAt.getTime();
+    });
+  }
 
   return rows.map((r) => ({
     id: r.id,
@@ -1355,6 +1370,7 @@ export async function getResolvedDecisions24h(): Promise<ResolvedDecisionData[]>
       dueAt: true,
       resolvedAt: true,
       resolutionNote: true,
+      resolutionSource: true,
       crewRole: { select: { slug: true } },
       resolvedBy: { select: { name: true } },
     },
@@ -1372,6 +1388,7 @@ export async function getResolvedDecisions24h(): Promise<ResolvedDecisionData[]>
     resolvedAt: r.resolvedAt!.toISOString(),
     resolvedByName: r.resolvedBy?.name ?? null,
     resolutionNote: r.resolutionNote,
+    resolutionSource: (r.resolutionSource ?? null) as "auto" | "human" | null,
   }));
 }
 
