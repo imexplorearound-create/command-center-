@@ -303,22 +303,39 @@
         list.className = "cc-feedback-picker-list";
         panel.appendChild(list);
 
+        var currentVisible = [];
+        var activeIndex = 0;
+
+        function setActive(i) {
+          var rows = list.querySelectorAll(".cc-feedback-picker-row");
+          rows.forEach(function (r, idx) {
+            if (idx === i) {
+              r.classList.add("cc-feedback-picker-row--active");
+              r.scrollIntoView({ block: "nearest" });
+            } else {
+              r.classList.remove("cc-feedback-picker-row--active");
+            }
+          });
+          activeIndex = i;
+        }
+
         function render(filter) {
           list.innerHTML = "";
           var q = (filter || "").trim().toLowerCase();
-          var visible = q
+          currentVisible = q
             ? cases.filter(function (c) {
                 return (c.code + " " + (c.title || "")).toLowerCase().indexOf(q) !== -1;
               })
             : cases;
-          if (visible.length === 0) {
+          currentVisible = currentVisible.slice(0, 50);
+          if (currentVisible.length === 0) {
             var empty = document.createElement("div");
             empty.className = "cc-feedback-picker-empty";
             empty.textContent = "Sem correspondências.";
             list.appendChild(empty);
             return;
           }
-          visible.slice(0, 50).forEach(function (c) {
+          currentVisible.forEach(function (c, i) {
             var row = document.createElement("button");
             row.type = "button";
             row.className = "cc-feedback-picker-row";
@@ -333,11 +350,28 @@
             row.addEventListener("click", function () {
               close({ code: c.code });
             });
+            row.addEventListener("mouseenter", function () { setActive(i); });
             list.appendChild(row);
           });
+          activeIndex = 0;
+          setActive(0);
         }
 
         search.addEventListener("input", function () { render(search.value); });
+        search.addEventListener("keydown", function (e) {
+          if (currentVisible.length === 0) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActive((activeIndex + 1) % currentVisible.length);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActive((activeIndex - 1 + currentVisible.length) % currentVisible.length);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            var c = currentVisible[activeIndex];
+            if (c) close({ code: c.code });
+          }
+        });
         render("");
         setTimeout(function () { search.focus(); }, 0);
       }

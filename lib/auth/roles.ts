@@ -26,3 +26,23 @@ export function canApproveFeedback(user: AuthUser, item: FeedbackItemScope): boo
 export function canVerifyFeedback(user: AuthUser, item: FeedbackItemScope): boolean {
   return canApproveFeedback(user, item);
 }
+
+/**
+ * Read-level: admin/manager/membro veem tudo do tenant; cliente só projectos
+ * onde tem acesso via `UserProjectAccess`. Usado em páginas e queries que
+ * listam/leem feedback mas não mutam.
+ */
+export function canReadProject(user: AuthUser, projectId: string): boolean {
+  return user.role !== "cliente" || user.projectIds.includes(projectId);
+}
+
+/**
+ * Prisma where-filter equivalente a `canReadProject`, para aplicar em
+ * `findMany` que lista sessões/items por projecto. Devolve `{}` para roles
+ * tenant-wide (zero filtragem adicional). Usar spread na where-clause.
+ */
+export function clienteProjectFilter(
+  user: AuthUser,
+): { projectId: { in: string[] } } | Record<string, never> {
+  return user.role === "cliente" ? { projectId: { in: user.projectIds } } : {};
+}

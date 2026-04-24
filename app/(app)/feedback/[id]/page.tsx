@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getTenantDb } from "@/lib/tenant";
-import { requireNonClient } from "@/lib/auth/dal";
+import { getAuthUser } from "@/lib/auth/dal";
+import { canReadProject } from "@/lib/auth/roles";
 import { parseAcceptanceCriteria } from "@/lib/feedback-utils";
 import { NOT_ARCHIVED_FEEDBACK_ITEM } from "@/lib/queries";
 import type { ApprovalStatus } from "@/lib/validation/feedback-approval";
@@ -11,14 +12,15 @@ export default async function FeedbackDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireNonClient();
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
   const { id } = await params;
   const db = await getTenantDb();
 
   const session = await db.feedbackSession.findUnique({
     where: { id },
     include: {
-      project: { select: { name: true, slug: true } },
+      project: { select: { id: true, name: true, slug: true } },
       items: {
         where: NOT_ARCHIVED_FEEDBACK_ITEM,
         orderBy: { timestampMs: "asc" },
@@ -43,6 +45,7 @@ export default async function FeedbackDetailPage({
   });
 
   if (!session) notFound();
+  if (!canReadProject(user, session.project.id)) redirect("/feedback");
 
   const items = session.items.map((item) => {
     const acceptanceCriteria = parseAcceptanceCriteria(item.acceptanceCriteria);

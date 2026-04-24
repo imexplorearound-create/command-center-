@@ -19,6 +19,8 @@ import {
   verifyFeedbackSchema,
   rejectVerificationSchema,
 } from "@/lib/validation/feedback-approval";
+import { defer } from "@/lib/utils/defer";
+import { notifyFeedbackApproved } from "@/lib/notifications/feedback-approved-notifier";
 
 async function loadItemForApproval(feedbackItemId: string) {
   const db = await getTenantDb();
@@ -101,6 +103,9 @@ export async function approveFeedback(
   });
 
   deferTaskDraft(db, taskResult.id);
+  defer("feedback-approved-notify", async () => {
+    await notifyFeedbackApproved(db, taskResult.id, auth.user.name);
+  });
 
   revalidatePath("/");
   revalidatePath(`/feedback/${item.id}`);
