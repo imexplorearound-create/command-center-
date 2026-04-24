@@ -5,6 +5,9 @@ import { tenantPrisma } from "@/lib/db";
 import { getSession } from "./session";
 import type { Role } from "@prisma/client";
 
+import { isAdmin, isManager, isWriter } from "./role-checks";
+export { isAdmin, isManager, isWriter };
+
 export interface AuthUser {
   userId: string;
   personId: string;
@@ -14,15 +17,6 @@ export interface AuthUser {
   name: string;
   projectIds: string[];
 }
-
-export const isAdmin = (user: { role: Role } | null | undefined): boolean =>
-  user?.role === "admin";
-
-export const isManager = (user: { role: Role } | null | undefined): boolean =>
-  user?.role === "admin" || user?.role === "manager";
-
-export const isWriter = (user: { role: Role } | null | undefined): boolean =>
-  user?.role === "admin" || user?.role === "manager" || user?.role === "membro";
 
 /**
  * Garante que o caller é admin. Devolve `AuthUser` ou um erro estruturado
