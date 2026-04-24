@@ -1102,6 +1102,11 @@ model FeedbackItem {
   // `approvalStatus` modela o ciclo do feedback (tester↔dev), não o kanban
   // da Task. Ver docs/feedback-loop.md para transições válidas.
   testCaseId            String?   @map("test_case_id") @db.Uuid
+  // Códigos T-NNN mencionados na transcrição mas não resolvidos para `testCaseId`
+  // (ex.: N matches ambíguos, ou extras além do dropdown). Para a triagem
+  // ver e decidir. Separado de `contextSnapshot` para preservar a shape
+  // array que os consumidores existentes assumem.
+  mentionedTestCaseCodes String[]  @default([]) @map("mentioned_test_case_codes")
   approvalStatus        String    @default("needs_review") @map("approval_status") @db.VarChar(30)
   approvedById          String?   @map("approved_by") @db.Uuid
   approvedAt            DateTime? @map("approved_at") @db.Timestamptz

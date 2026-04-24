@@ -12,6 +12,9 @@
   var isRecording = false;
   var currentSessionId = null;
   var pagesVisited = [window.location.href];
+  var selectedTestCaseCode = null;
+  var isOpeningPicker = false;
+  var TEST_CASES_TTL_MS = 24 * 60 * 60 * 1000;
 
   var recordingStartTime = 0;
   var recordedEvents = [];
@@ -240,6 +243,142 @@
     return "";
   }
 
+  function fetchTestCases(settings, projectSlug) {
+    var cache = (settings.testCasesByProject || {})[projectSlug];
+    if (cache && Date.now() - cache.fetchedAt < TEST_CASES_TTL_MS) {
+      return Promise.resolve(cache.cases);
+    }
+    if (!settings.feedbackToken || !settings.serverUrl || !projectSlug) {
+      return Promise.resolve([]);
+    }
+    var url = settings.serverUrl +
+      "/api/feedback/test-cases?projectSlug=" + encodeURIComponent(projectSlug);
+    return fetch(url, {
+      headers: { Authorization: "Bearer " + settings.feedbackToken },
+    }).then(function (res) {
+      if (!res.ok) {
+        console.warn("[CC Feedback] fetch test-cases failed:", res.status);
+        return [];
+      }
+      return res.json().then(function (body) {
+        var cases = Array.isArray(body.testCases) ? body.testCases : [];
+        var updated = Object.assign({}, settings.testCasesByProject || {});
+        updated[projectSlug] = { cases: cases, fetchedAt: Date.now() };
+        return window.ccStorage.set({ testCasesByProject: updated })
+          .then(function () { return cases; });
+      });
+    }).catch(function (err) {
+      console.warn("[CC Feedback] fetch test-cases error:", err && err.message);
+      return [];
+    });
+  }
+
+  function showTestCasePicker(cases) {
+    return new Promise(function (resolve) {
+      var backdrop = document.createElement("div");
+      backdrop.className = "cc-feedback-picker-backdrop";
+      var panel = document.createElement("div");
+      panel.className = "cc-feedback-picker";
+
+      var title = document.createElement("div");
+      title.className = "cc-feedback-picker-title";
+      title.textContent = "Escolhe o teste";
+      panel.appendChild(title);
+
+      var sub = document.createElement("div");
+      sub.className = "cc-feedback-picker-sub";
+      sub.textContent = cases.length
+        ? "Clica num caso para começar a gravar, ou 'Sem caso' para uma nota genérica."
+        : "Não há casos activos neste projecto. Vais gravar sem código de teste.";
+      panel.appendChild(sub);
+
+      if (cases.length) {
+        var search = document.createElement("input");
+        search.type = "text";
+        search.className = "cc-feedback-picker-search";
+        search.placeholder = "Filtrar por código ou título…";
+        panel.appendChild(search);
+
+        var list = document.createElement("div");
+        list.className = "cc-feedback-picker-list";
+        panel.appendChild(list);
+
+        function render(filter) {
+          list.innerHTML = "";
+          var q = (filter || "").trim().toLowerCase();
+          var visible = q
+            ? cases.filter(function (c) {
+                return (c.code + " " + (c.title || "")).toLowerCase().indexOf(q) !== -1;
+              })
+            : cases;
+          if (visible.length === 0) {
+            var empty = document.createElement("div");
+            empty.className = "cc-feedback-picker-empty";
+            empty.textContent = "Sem correspondências.";
+            list.appendChild(empty);
+            return;
+          }
+          visible.slice(0, 50).forEach(function (c) {
+            var row = document.createElement("button");
+            row.type = "button";
+            row.className = "cc-feedback-picker-row";
+            var code = document.createElement("span");
+            code.className = "cc-feedback-picker-code";
+            code.textContent = c.code;
+            var titleEl = document.createElement("span");
+            titleEl.className = "cc-feedback-picker-row-title";
+            titleEl.textContent = c.title;
+            row.appendChild(code);
+            row.appendChild(titleEl);
+            row.addEventListener("click", function () {
+              close({ code: c.code });
+            });
+            list.appendChild(row);
+          });
+        }
+
+        search.addEventListener("input", function () { render(search.value); });
+        render("");
+        setTimeout(function () { search.focus(); }, 0);
+      }
+
+      var actions = document.createElement("div");
+      actions.className = "cc-feedback-picker-actions";
+
+      var skipBtn = document.createElement("button");
+      skipBtn.type = "button";
+      skipBtn.className = "cc-feedback-picker-skip";
+      skipBtn.textContent = "Sem caso";
+      skipBtn.addEventListener("click", function () { close({ code: null }); });
+      actions.appendChild(skipBtn);
+
+      var cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "cc-feedback-picker-cancel";
+      cancelBtn.textContent = "Cancelar";
+      cancelBtn.addEventListener("click", function () { close(null); });
+      actions.appendChild(cancelBtn);
+
+      panel.appendChild(actions);
+
+      backdrop.appendChild(panel);
+      document.body.appendChild(backdrop);
+
+      function close(choice) {
+        document.removeEventListener("keydown", onEsc, true);
+        backdrop.remove();
+        resolve(choice);
+      }
+      function onEsc(e) {
+        if (e.key === "Escape") close(null);
+      }
+      backdrop.addEventListener("click", function (e) {
+        if (e.target === backdrop) close(null);
+      });
+      document.addEventListener("keydown", onEsc, true);
+    });
+  }
+
   var btn = document.createElement("button");
   btn.className = "cc-feedback-btn";
   btn.textContent = "🎤";
@@ -320,8 +459,10 @@
       stopRecording();
       return;
     }
+    if (isOpeningPicker) return;
     // Defesa adicional: mesmo com host_permissions, confirmar que o origin actual
     // está num workspace configurado + GDPR aceite antes de gravar.
+    isOpeningPicker = true;
     window.ccStorage.get().then(function (settings) {
       if (!settings.gdprConsentAt) {
         showToast("Abre o popup da extensão e aceita o aviso de privacidade.", true);
@@ -335,8 +476,17 @@
         showToast("Este site não está na tua lista de workspaces.", true);
         return;
       }
-      drainQueue();
-      startRecording();
+      var projectSlug = resolveProjectSlug(settings.workspaces || []);
+      return fetchTestCases(settings, projectSlug).then(function (cases) {
+        return showTestCasePicker(cases);
+      }).then(function (choice) {
+        if (choice === null) return;
+        selectedTestCaseCode = choice.code || null;
+        drainQueue();
+        startRecording();
+      });
+    }).finally(function () {
+      isOpeningPicker = false;
     });
   });
 
@@ -471,7 +621,9 @@
         sessionId: currentSessionId,
         screenshotDataUrl: screenshotDataUrl || null,
         extraScreenshots: Array.isArray(extraScreenshots) ? extraScreenshots : [],
+        testCaseCode: selectedTestCaseCode,
       };
+      selectedTestCaseCode = null;
 
       // Persistir SEMPRE antes de tentar enviar — falha de rede não perde gravação.
       window.ccQueue.enqueue(audioBlob, metadata, events)
@@ -514,6 +666,9 @@
     }
     if (metadata.extraScreenshots && metadata.extraScreenshots.length > 0) {
       formData.append("extraScreenshotsJson", JSON.stringify(metadata.extraScreenshots));
+    }
+    if (metadata.testCaseCode) {
+      formData.append("testCaseCode", metadata.testCaseCode);
     }
 
     var MAX_RETRIES = 3;

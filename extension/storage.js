@@ -13,6 +13,9 @@
     testerName: "",
     workspaces: [],
     gdprConsentAt: 0,
+    // Cache de TestCases por projectSlug. Shape: { [slug]: { cases, fetchedAt } }.
+    // fetchedAt em ms desde epoch; refresh se >24h.
+    testCasesByProject: {},
   };
 
   var cache = null;

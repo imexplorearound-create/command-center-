@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { testCaseCodeSchema } from "./test-sheet-schema";
 
 // ─── Enums ──────────────────────────────────────────────────
 
@@ -127,6 +128,9 @@ export const voiceNoteUploadSchema = z.object({
   timestampMs: z.coerce.number().int().min(0),
   cursorX: z.coerce.number().optional(),
   cursorY: z.coerce.number().optional(),
+  // Código de TestCase escolhido na extension (dropdown). Se vier vazio,
+  // a route tenta extrair da transcrição via regex /T-\d+/gi.
+  testCaseCode: testCaseCodeSchema.optional(),
 });
 
 export type VoiceNoteUploadInput = z.infer<typeof voiceNoteUploadSchema>;
