@@ -22,6 +22,25 @@ export async function signAssetUrl(
   return `${getBaseUrl()}/api/handoff-asset?t=${token}`;
 }
 
+/**
+ * Wrapper não-fatal de `signAssetUrl`: devolve o path original se a
+ * assinatura falhar (ex. HANDOFF_ASSET_SECRET não configurado). Loga em
+ * `warn` para não perder o sinal de misconfig. Usado em endpoints que
+ * agregam muitas URLs e preferem resposta parcial a 500.
+ */
+export async function signAssetUrlSafe(
+  path: string | null,
+  ttlSec = DEFAULT_TTL_SECONDS
+): Promise<string | null> {
+  if (!path) return null;
+  try {
+    return await signAssetUrl(path, ttlSec);
+  } catch (err) {
+    console.warn("[signAssetUrlSafe] falhou, devolvendo path raw:", err instanceof Error ? err.message : err);
+    return path;
+  }
+}
+
 export async function verifyAssetToken(
   token: string
 ): Promise<{ path: string } | null> {

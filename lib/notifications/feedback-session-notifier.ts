@@ -1,22 +1,21 @@
 import type { TenantPrisma } from "@/lib/db";
 import { getBaseUrl } from "@/lib/feedback-utils";
-import { EmailChannel } from "./channels/email";
 import {
-  buildFeedbackSessionNotification,
-} from "./templates/feedback-session";
+  resolveEmailRecipients,
+  getEmailChannelIfEnabled,
+  sendEmailToAll,
+} from "./send-helpers";
+import { buildFeedbackSessionNotification } from "./templates/feedback-session";
 
 export async function notifyFeedbackSessionReady(
   db: TenantPrisma,
   sessionId: string
 ): Promise<void> {
-  const recipients = (process.env.FEEDBACK_NOTIFY_TO || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const recipients = resolveEmailRecipients("FEEDBACK_NOTIFY_TO");
   if (recipients.length === 0) return;
 
-  const channel = new EmailChannel();
-  if (!channel.enabled) return;
+  const channel = getEmailChannelIfEnabled();
+  if (!channel) return;
 
   const session = await db.feedbackSession.findUnique({
     where: { id: sessionId },
@@ -50,16 +49,11 @@ export async function notifyFeedbackSessionReady(
     exportUrl,
   });
 
-  await Promise.allSettled(
-    recipients.map((to) =>
-      channel.send({
-        type: "feedback_session_ready",
-        recipientEmail: to,
-        subject,
-        summary: subject,
-        body,
-        actionUrl,
-      })
-    )
-  );
+  await sendEmailToAll(channel, recipients, {
+    type: "feedback_session_ready",
+    subject,
+    summary: subject,
+    body,
+    actionUrl,
+  });
 }
