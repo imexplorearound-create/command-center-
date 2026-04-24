@@ -131,7 +131,7 @@ describe("resolveDecision", () => {
     expect(r).toEqual({ error: "Sem permissão" });
   });
 
-  it("marca resolvedAt + resolvedById + nota + resolutionSource='human'", async () => {
+  it("marca resolvedAt + resolvedBy + nota + resolutionSource='human'", async () => {
     mocks.decision.update.mockResolvedValue({});
     const fd = new FormData();
     fd.set("decisionId", VALID_UUID);
@@ -141,7 +141,7 @@ describe("resolveDecision", () => {
     const call = mocks.decision.update.mock.calls[0]![0];
     expect(call.where).toEqual({ id: VALID_UUID });
     expect(call.data.resolvedAt).toBeInstanceOf(Date);
-    expect(call.data.resolvedById).toBe("person-1");
+    expect(call.data.resolvedBy).toEqual({ connect: { id: "person-1" } });
     expect(call.data.resolutionNote).toBe("Resolvido em call");
     expect(call.data.resolutionSource).toBe("human");
   });
@@ -214,10 +214,10 @@ describe("reopenDecision (DB1: cria nova row + liga via reopenedById)", () => {
     expect(createCall.data.resolvedAt).toBeUndefined();
     expect(createCall.data.resolvedById).toBeUndefined();
 
-    // A antiga mantém `resolvedAt`/`resolvedById` intactos — só adquire `reopenedById`.
+    // A antiga mantém `resolvedAt`/`resolvedById` intactos — só adquire `reopenedBy`.
     const updateCall = mocks.decision.update.mock.calls[0]![0];
     expect(updateCall.where).toEqual({ id: VALID_UUID });
-    expect(updateCall.data).toEqual({ reopenedById: NEW_UUID });
+    expect(updateCall.data).toEqual({ reopenedBy: { connect: { id: NEW_UUID } } });
   });
 
   it("rejeita se a decisão não existir", async () => {

@@ -80,7 +80,9 @@ export async function resolveDecision(
     where: { id: parsed.data.decisionId },
     data: {
       resolvedAt: new Date(),
-      resolvedById: user?.personId ?? null,
+      resolvedBy: user?.personId
+        ? { connect: { id: user.personId } }
+        : { disconnect: true },
       resolutionNote: parsed.data.resolutionNote ?? null,
       resolutionSource: "human",
     },
@@ -171,7 +173,7 @@ export async function reopenDecision(
 
   await db.decision.update({
     where: { id: old.id },
-    data: { reopenedById: next.id },
+    data: { reopenedBy: { connect: { id: next.id } } },
   });
 
   revalidatePath("/");
