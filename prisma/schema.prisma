@@ -415,7 +415,7 @@ model Task {
 
   workflowInstanceTasks WorkflowInstanceTask[]
   githubEvents          GithubEvent[]
-  feedbackItem          FeedbackItem?            @relation("FeedbackTask")
+  feedbackItems         FeedbackItem[]           @relation("FeedbackTask")
   timeEntries   TimeEntry[] @relation("TimeEntryTask")
   decisions     Decision[]  @relation("DecisionTask")
 
@@ -1079,7 +1079,7 @@ model FeedbackItem {
   voiceTranscript String?   @map("voice_transcript") @db.Text
   aiSummary       String?   @map("ai_summary") @db.Text
   contextSnapshot Json?     @map("context_snapshot")
-  taskId          String?   @unique @map("task_id") @db.Uuid
+  taskId          String?   @map("task_id") @db.Uuid
   status          String    @default("pending") @db.VarChar(50)
   reviewedById    String?   @map("reviewed_by") @db.Uuid
   reviewedAt      DateTime? @map("reviewed_at") @db.Timestamptz
@@ -1136,6 +1136,7 @@ model FeedbackItem {
   @@index([archivedAt], map: "idx_feedback_items_archived")
   @@index([tenantId, approvalStatus], map: "idx_feedback_items_tenant_approval")
   @@index([tenantId, testCaseId], map: "idx_feedback_items_tenant_test_case")
+  @@index([taskId], map: "idx_feedback_items_task")
   @@map("feedback_items")
 }
 

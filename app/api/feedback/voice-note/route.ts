@@ -18,6 +18,7 @@ import { decodeImageDataUrl } from "@/lib/feedback-utils";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildCorsHeaders, isAllowedOrigin } from "@/lib/cors";
 import { resolveTestCaseFromVoice } from "@/lib/feedback/resolve-test-case";
+import { defer } from "@/lib/utils/defer";
 
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get("origin");
@@ -326,32 +327,28 @@ function deferDraftExtraction(
   projectSlug: string,
   screenshotPaths: string[],
 ): void {
-  (async () => {
-    try {
-      const draft = await extractFeedbackDraft({
-        transcript,
-        classification: aiResult,
-        events,
-        pageUrl,
-        pageTitle,
-        projectSlug,
-        screenshotPaths,
-      });
-      if (!draft) return;
+  defer("feedback-draft", async () => {
+    const draft = await extractFeedbackDraft({
+      transcript,
+      classification: aiResult,
+      events,
+      pageUrl,
+      pageTitle,
+      projectSlug,
+      screenshotPaths,
+    });
+    if (!draft) return;
 
-      await db.feedbackItem.update({
-        where: { id: itemId },
-        data: {
-          expectedResult: draft.expectedResult,
-          actualResult: draft.actualResult,
-          reproSteps: draft.reproSteps,
-          acceptanceCriteria: draft.acceptanceCriteria,
-          priority: draft.suggestedPriority,
-          aiDraftedAt: new Date(),
-        },
-      });
-    } catch (err) {
-      console.error("Draft extraction failed:", err);
-    }
-  })().catch((err) => console.error("Deferred draft extraction failed:", err));
+    await db.feedbackItem.update({
+      where: { id: itemId },
+      data: {
+        expectedResult: draft.expectedResult,
+        actualResult: draft.actualResult,
+        reproSteps: draft.reproSteps,
+        acceptanceCriteria: draft.acceptanceCriteria,
+        priority: draft.suggestedPriority,
+        aiDraftedAt: new Date(),
+      },
+    });
+  });
 }

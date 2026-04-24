@@ -3,6 +3,7 @@ import { getTenantDb } from "@/lib/tenant";
 import { requireNonClient } from "@/lib/auth/dal";
 import { parseAcceptanceCriteria } from "@/lib/feedback-utils";
 import { NOT_ARCHIVED_FEEDBACK_ITEM } from "@/lib/queries";
+import type { ApprovalStatus } from "@/lib/validation/feedback-approval";
 import { FeedbackSessionView } from "./session-view";
 
 export default async function FeedbackDetailPage({
@@ -27,6 +28,13 @@ export default async function FeedbackDetailPage({
               handoffStatus: true,
               handoffAgentId: true,
               handoffResolvedAt: true,
+            },
+          },
+          testCase: {
+            select: {
+              id: true,
+              code: true,
+              title: true,
             },
           },
         },
@@ -63,6 +71,11 @@ export default async function FeedbackDetailPage({
       handoffStatus: item.task?.handoffStatus ?? null,
       handoffAgentId: item.task?.handoffAgentId ?? null,
       handoffResolvedAt: item.task?.handoffResolvedAt?.toISOString() ?? null,
+      approvalStatus: item.approvalStatus as ApprovalStatus,
+      mentionedTestCaseCodes: item.mentionedTestCaseCodes,
+      testCase: item.testCase
+        ? { id: item.testCase.id, code: item.testCase.code, title: item.testCase.title }
+        : null,
     };
   });
 

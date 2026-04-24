@@ -58,13 +58,7 @@ Gera um plano de ação em Markdown (~10-20 linhas) para o developer que vai res
 
 Sê concreto e prático. Não expliques conceitos — o dev é sénior. Assume que o projecto é um PMS (Property Management System) com Next.js + Prisma + PostgreSQL.`;
 
-function extractText(response: { content: Array<{ type: string; text?: string }> }): string {
-  // Modelos com "thinking" podem devolver content[0] como bloco thinking e o texto em content[1+].
-  for (const block of response.content) {
-    if (block.type === "text" && typeof block.text === "string") return block.text;
-  }
-  return "";
-}
+import { extractTextBlock as extractText } from "@/lib/maestro/message-utils";
 
 function buildPromptLines(lines: (string | null | undefined | false)[]): string {
   return lines.filter(Boolean).join("\n");
