@@ -35,7 +35,7 @@ export async function GET(
       handoffStatus: true,
       handoffAgentId: true,
       project: { select: { slug: true } },
-      feedbackItem: {
+      feedbackItems: {
         select: {
           id: true,
           classification: true,
@@ -65,6 +65,10 @@ export async function GET(
             },
           },
         },
+        // Bundle histórico: um Task pode ter N FeedbackItems após F3 (B1 decision).
+        // Para manter compat com consumidores existentes, exportamos o primeiro.
+        orderBy: { createdAt: "asc" },
+        take: 1,
       },
     },
   });
@@ -72,11 +76,11 @@ export async function GET(
   if (!task) {
     return NextResponse.json({ error: "task not found" }, { status: 404 });
   }
-  if (!task.feedbackItem) {
+  if (task.feedbackItems.length === 0) {
     return NextResponse.json({ error: "task has no linked feedback item" }, { status: 404 });
   }
 
-  const item = task.feedbackItem;
+  const item = task.feedbackItems[0]!;
   const session = item.session;
 
   const extras = extractExtraScreenshots(item.contextSnapshot);

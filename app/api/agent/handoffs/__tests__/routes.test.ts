@@ -72,7 +72,7 @@ describe("GET /api/agent/handoffs", () => {
         handoffStatus: "queued",
         handoffSentAt: new Date("2026-04-19T06:00:00Z"),
         project: { slug: "p1" },
-        feedbackItem: { id: "fi-1", sessionId: "fs-1" },
+        feedbackItems: [{ id: "fi-1", sessionId: "fs-1" }],
       },
     ]);
 

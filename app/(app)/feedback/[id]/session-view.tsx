@@ -28,6 +28,8 @@ import {
 } from "@/lib/validation/feedback-schema";
 import type { AcceptanceCriterion } from "@/lib/feedback-utils";
 import { HANDOFF_STATUS, type HandoffStatus } from "@/lib/handoff-status";
+import type { ApprovalStatus } from "@/lib/validation/feedback-approval";
+import { ApprovalButtons } from "./approval-buttons";
 
 const CLASSIFICATION_VALUES = ["bug", "suggestion", "question", "praise"] as const;
 const CLASSIFICATION_COLORS: Record<string, string> = {
@@ -77,6 +79,9 @@ interface ItemData {
   handoffStatus: string | null;
   handoffAgentId: string | null;
   handoffResolvedAt: string | null;
+  approvalStatus: ApprovalStatus;
+  mentionedTestCaseCodes: string[];
+  testCase: { id: string; code: string; title: string } | null;
 }
 
 interface Props {
@@ -284,6 +289,8 @@ export function FeedbackSessionView({ session, items }: Props) {
                 )}
               </div>
             </div>
+
+            <FeedbackApprovalStrip item={item} />
 
             {item.voiceAudioUrl && (
               <audio
@@ -869,5 +876,56 @@ function HandoffControls({
     >
       → Enviar ao produtor
     </button>
+  );
+}
+
+function FeedbackApprovalStrip({ item }: { item: ItemData }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        flexWrap: "wrap",
+        alignItems: "center",
+        padding: "8px 12px",
+        marginBottom: 8,
+        background: "var(--green-glow)",
+        borderLeft: "3px solid var(--green)",
+        borderRadius: 4,
+        fontSize: "0.8rem",
+      }}
+    >
+      {item.testCase ? (
+        <span
+          style={{
+            fontFamily: "monospace",
+            background: "var(--card, #fff)",
+            border: "1px solid var(--border)",
+            padding: "2px 8px",
+            borderRadius: 4,
+            color: "var(--text)",
+          }}
+          title={item.testCase.title}
+        >
+          {item.testCase.code}
+        </span>
+      ) : (
+        <span style={{ color: "var(--yellow)" }}>Sem TestCase atribuído</span>
+      )}
+
+      {item.mentionedTestCaseCodes.length > 0 && (
+        <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+          Mencionados: <code>{item.mentionedTestCaseCodes.join(", ")}</code>
+        </span>
+      )}
+
+      <span style={{ flex: 1 }} />
+
+      <ApprovalButtons
+        feedbackItemId={item.id}
+        approvalStatus={item.approvalStatus}
+        hasTestCase={!!item.testCase}
+      />
+    </div>
   );
 }
