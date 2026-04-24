@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => {
   const feedbackItem = {
     findFirst: vi.fn(),
+    findMany: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   };
   const task = {
     findFirst: vi.fn(),
@@ -44,6 +46,8 @@ import {
   approveFeedback,
   rejectFeedback,
   archiveFeedback,
+  verifyFeedback,
+  rejectVerification,
 } from "../feedback-approval-actions";
 
 import {
@@ -245,5 +249,113 @@ describe("archiveFeedback", () => {
     fd.set("feedbackItemId", FEEDBACK_ID);
     const r = await archiveFeedback(undefined, fd);
     expect(r).toMatchObject({ error: expect.stringContaining("arquivado") });
+  });
+});
+
+describe("verifyFeedback", () => {
+  const verifierItem = {
+    id: FEEDBACK_ID,
+    tenantId: TENANT,
+    taskId: TASK_ID,
+    approvalStatus: "ready_for_verification",
+    session: { projectId: PROJECT_ID },
+  };
+
+  it("rejeita se caller não for writer", async () => {
+    mocks.requireWriter.mockResolvedValueOnce({ ok: false, error: "Sem permissão" });
+    const fd = new FormData();
+    fd.set("feedbackItemId", FEEDBACK_ID);
+    const r = await verifyFeedback(undefined, fd);
+    expect(r).toEqual({ error: "Sem permissão" });
+  });
+
+  it("rejeita sem taskId", async () => {
+    mocks.feedbackItem.findFirst.mockResolvedValue({ ...verifierItem, taskId: null });
+    const fd = new FormData();
+    fd.set("feedbackItemId", FEEDBACK_ID);
+    const r = await verifyFeedback(undefined, fd);
+    expect(r).toMatchObject({ error: expect.stringContaining("task") });
+  });
+
+  it("aplica transição verified com verifiedById e updateMany", async () => {
+    mocks.feedbackItem.findFirst.mockResolvedValue(verifierItem);
+    mocks.task.findFirst.mockResolvedValue({ id: TASK_ID });
+    mocks.feedbackItem.findMany.mockResolvedValue([
+      { id: "f1", approvalStatus: "ready_for_verification" },
+    ]);
+    mocks.feedbackItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const fd = new FormData();
+    fd.set("feedbackItemId", FEEDBACK_ID);
+    const r = await verifyFeedback(undefined, fd);
+
+    expect(r).toEqual({ success: true });
+    const update = mocks.feedbackItem.updateMany.mock.calls[0]![0];
+    expect(update.data.approvalStatus).toBe("verified");
+    expect(update.data.verifiedById).toBe("p1");
+    expect(update.data.verifiedAt).toBeInstanceOf(Date);
+  });
+
+  it("cliente sem acesso ao projecto → Sem permissão", async () => {
+    mocks.requireWriter.mockResolvedValueOnce({
+      ok: true,
+      user: {
+        userId: "u2",
+        personId: "p2",
+        email: "c@x",
+        name: "Cliente",
+        role: "cliente",
+        tenantId: TENANT,
+        projectIds: ["other-project"],
+      },
+    });
+    mocks.feedbackItem.findFirst.mockResolvedValue(verifierItem);
+    const fd = new FormData();
+    fd.set("feedbackItemId", FEEDBACK_ID);
+    const r = await verifyFeedback(undefined, fd);
+    expect(r).toEqual({ error: "Sem permissão para este projecto" });
+  });
+});
+
+describe("rejectVerification", () => {
+  const verifierItem = {
+    id: FEEDBACK_ID,
+    tenantId: TENANT,
+    taskId: TASK_ID,
+    approvalStatus: "ready_for_verification",
+    session: { projectId: PROJECT_ID },
+  };
+
+  beforeEach(() => {
+    mocks.task.findFirst.mockResolvedValue({ id: TASK_ID });
+  });
+
+  it("volta para in_dev + rejection origin=verifier + incrementa contador", async () => {
+    mocks.feedbackItem.findFirst.mockResolvedValue(verifierItem);
+    mocks.feedbackItem.findMany.mockResolvedValue([
+      { id: "f1", approvalStatus: "ready_for_verification" },
+    ]);
+    mocks.feedbackItem.updateMany.mockResolvedValue({ count: 1 });
+
+    const fd = new FormData();
+    fd.set("feedbackItemId", FEEDBACK_ID);
+    fd.set("rejectionReason", "Ainda falha em Safari");
+    const r = await rejectVerification(undefined, fd);
+
+    expect(r).toEqual({ success: true });
+    const update = mocks.feedbackItem.updateMany.mock.calls[0]![0];
+    expect(update.data.approvalStatus).toBe("in_dev");
+    expect(update.data.rejectionOrigin).toBe("verifier");
+    expect(update.data.rejectionReason).toBe("Ainda falha em Safari");
+    expect(update.data.verifyRejectionsCount).toEqual({ increment: 1 });
+  });
+
+  it("exige rejectionReason", async () => {
+    mocks.feedbackItem.findFirst.mockResolvedValue(verifierItem);
+    const fd = new FormData();
+    fd.set("feedbackItemId", FEEDBACK_ID);
+    const r = await rejectVerification(undefined, fd);
+    expect(r).toHaveProperty("error");
+    expect(mocks.feedbackItem.updateMany).not.toHaveBeenCalled();
   });
 });

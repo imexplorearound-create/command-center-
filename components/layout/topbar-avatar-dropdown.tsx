@@ -11,6 +11,7 @@ type Props = {
 type Item = { label: string; href: string; danger?: boolean };
 
 const ITEMS: Item[] = [
+  { label: "Verificações", href: "/verifications" },
   { label: "Settings", href: "/settings" },
   { label: "Áreas", href: "/areas" },
   { label: "Pessoas", href: "/people" },

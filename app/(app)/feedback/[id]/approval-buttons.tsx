@@ -9,7 +9,7 @@ import {
   rejectFeedback,
   archiveFeedback,
 } from "@/lib/actions/feedback-approval-actions";
-import { Modal } from "@/components/shared/modal";
+import { RejectWithReasonModal } from "@/components/shared/reject-with-reason-modal";
 import type { ApprovalStatus } from "@/lib/validation/feedback-approval";
 
 type Props = {
@@ -125,74 +125,16 @@ export function ApprovalButtons({ feedbackItemId, approvalStatus, hasTestCase }:
         </button>
       </form>
 
-      <RejectModal
+      <RejectWithReasonModal
         open={showReject}
         onClose={() => setShowReject(false)}
+        action={rejectFeedback}
         feedbackItemId={feedbackItemId}
+        title="Rejeitar feedback"
+        placeholder="Ex: Duplicado de X, fora do scope, mal-entendido…"
+        successMessage="Rejeitado"
+        submitLabel="Rejeitar"
       />
     </div>
-  );
-}
-
-function RejectModal({
-  open,
-  onClose,
-  feedbackItemId,
-}: {
-  open: boolean;
-  onClose: () => void;
-  feedbackItemId: string;
-}) {
-  const router = useRouter();
-  const [state, action, pending] = useActionState(rejectFeedback, undefined);
-
-  useEffect(() => {
-    if (!state) return;
-    if ("error" in state) toast.error(state.error);
-    else {
-      toast.success("Rejeitado");
-      onClose();
-      router.refresh();
-    }
-  }, [state, onClose, router]);
-
-  return (
-    <Modal open={open} onClose={onClose} title="Rejeitar feedback" width={460}>
-      <form action={action} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <input type="hidden" name="feedbackItemId" value={feedbackItemId} />
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-          <span>Motivo (mínimo 3 chars)</span>
-          <textarea
-            name="rejectionReason"
-            required
-            minLength={3}
-            maxLength={2000}
-            rows={4}
-            className="cc-input"
-            placeholder="Ex: Duplicado de X, fora do scope, mal-entendido…"
-          />
-        </label>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button type="button" onClick={onClose} className="cc-button-ghost" disabled={pending}>
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={pending}
-            style={{
-              padding: "6px 12px",
-              borderRadius: 6,
-              border: "1px solid var(--red)",
-              background: "var(--red)",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            {pending ? "A rejeitar…" : "Rejeitar"}
-          </button>
-        </div>
-      </form>
-    </Modal>
   );
 }
