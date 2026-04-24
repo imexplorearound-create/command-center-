@@ -65,6 +65,9 @@ model Tenant {
   crewRoles              CrewRole[]
   executors              Executor[]
   decisions              Decision[]
+  testSheets             TestSheet[]
+  testCases              TestCase[]
+  devApiKeys             DevApiKey[]
 
   @@map("tenants")
 }
@@ -215,6 +218,7 @@ model Project {
   emailRecords   EmailRecord[]
   investmentMap  InvestmentMap?
   decisions      Decision[]  @relation("DecisionProject")
+  testSheets     TestSheet[] @relation("TestSheetProject")
 
   @@unique([tenantId, slug])
   @@index([tenantId])
@@ -332,6 +336,9 @@ model Person {
   campaignRecipients      CampaignRecipient[]   @relation("CampaignRecipientPerson")
   executorAsHuman         Executor[]            @relation("ExecutorHuman")
   decisionsResolved       Decision[]            @relation("DecisionResolvedBy")
+  devApiKeys              DevApiKey[]           @relation("DevApiKeyOwner")
+  feedbacksApproved       FeedbackItem[]        @relation("FeedbackApprover")
+  feedbacksVerified       FeedbackItem[]        @relation("FeedbackVerifier")
 
   @@index([tenantId])
   @@index([archivedAt], map: "idx_people_archived")
@@ -392,6 +399,9 @@ model Task {
   handoffResolvedAt DateTime? @map("handoff_resolved_at") @db.Timestamptz
   handoffResolution Json?     @map("handoff_resolution")
 
+  // Feedback loop
+  testCaseId String? @map("test_case_id") @db.Uuid
+
   tenant  Tenant   @relation(fields: [tenantId], references: [id])
   project   Project?      @relation(fields: [projectId], references: [id])
   area      Area?         @relation(fields: [areaId], references: [id])
@@ -401,6 +411,7 @@ model Task {
   keyResult KeyResult?    @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
   alerts    Alert[]       @relation("AlertTask")
   handoffExecutor Executor? @relation("TaskHandoffExecutor", fields: [handoffExecutorId], references: [id])
+  testCase  TestCase?     @relation("TaskTestCase", fields: [testCaseId], references: [id])
 
   workflowInstanceTasks WorkflowInstanceTask[]
   githubEvents          GithubEvent[]
@@ -416,6 +427,7 @@ model Task {
   @@index([archivedAt], map: "idx_tasks_archived")
   @@index([projectId, status, kanbanOrder], map: "idx_tasks_kanban")
   @@index([handoffStatus, handoffAgentId], map: "idx_tasks_handoff")
+  @@index([testCaseId], map: "idx_tasks_test_case")
   @@map("tasks")
 }
 
@@ -1086,6 +1098,19 @@ model FeedbackItem {
   attributedCrewRoleId  String? @map("attributed_crew_role_id") @db.Uuid
   attributedExecutorId  String? @map("attributed_executor_id") @db.Uuid
 
+  // Feedback loop — máquina de estados da aprovação/verificação.
+  // `approvalStatus` modela o ciclo do feedback (tester↔dev), não o kanban
+  // da Task. Ver docs/feedback-loop.md para transições válidas.
+  testCaseId            String?   @map("test_case_id") @db.Uuid
+  approvalStatus        String    @default("needs_review") @map("approval_status") @db.VarChar(30)
+  approvedById          String?   @map("approved_by") @db.Uuid
+  approvedAt            DateTime? @map("approved_at") @db.Timestamptz
+  verifiedById          String?   @map("verified_by") @db.Uuid
+  verifiedAt            DateTime? @map("verified_at") @db.Timestamptz
+  rejectionReason       String?   @map("rejection_reason") @db.Text
+  rejectionOrigin       String?   @map("rejection_origin") @db.VarChar(10)  // "dev" | "verifier"
+  verifyRejectionsCount Int       @default(0) @map("verify_rejections_count")
+
   tenant     Tenant          @relation(fields: [tenantId], references: [id])
   session    FeedbackSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   task       Task?           @relation("FeedbackTask", fields: [taskId], references: [id])
@@ -1094,6 +1119,9 @@ model FeedbackItem {
   attributedCrewRole CrewRole? @relation("FeedbackItemCrewRole", fields: [attributedCrewRoleId], references: [id])
   attributedExecutor Executor? @relation("FeedbackItemExecutor", fields: [attributedExecutorId], references: [id])
   decisions          Decision[] @relation("DecisionFeedback")
+  testCase           TestCase?  @relation("FeedbackTestCase", fields: [testCaseId], references: [id])
+  approvedBy         Person?    @relation("FeedbackApprover", fields: [approvedById], references: [id])
+  verifiedBy         Person?    @relation("FeedbackVerifier", fields: [verifiedById], references: [id])
 
   @@index([tenantId])
   @@index([sessionId], map: "idx_feedback_items_session")
@@ -1101,6 +1129,8 @@ model FeedbackItem {
   @@index([module], map: "idx_feedback_items_module")
   @@index([status], map: "idx_feedback_items_status")
   @@index([archivedAt], map: "idx_feedback_items_archived")
+  @@index([tenantId, approvalStatus], map: "idx_feedback_items_tenant_approval")
+  @@index([tenantId, testCaseId], map: "idx_feedback_items_tenant_test_case")
   @@map("feedback_items")
 }
 
@@ -1368,4 +1398,78 @@ model CampaignRecipient {
   @@index([campaignId], map: "idx_campaign_recipients_campaign")
   @@index([campaignId, status], map: "idx_campaign_recipients_status")
   @@map("campaign_recipients")
+}
+
+
+// ─── Feedback Loop ─────────────────────────────────────────
+// Folha de testes criada pelo developer (Bruno) via `/api/dev/*`.
+// Cada TestCase tem um código `T-XXX` que o tester diz/escolhe no
+// início do feedback. Ciclo fechado: tester aprova FeedbackItem →
+// Task no kanban → Bruno marca ready_for_verification → verificador
+// aprova ou rejeita (rejeição volta para Bruno).
+
+model TestSheet {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  projectId         String    @map("project_id") @db.Uuid
+  title             String    @db.VarChar(200)
+  description       String?   @db.Text
+  createdByApiKeyId String?   @map("created_by_api_key_id") @db.Uuid
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant          Tenant     @relation(fields: [tenantId], references: [id])
+  project         Project    @relation("TestSheetProject", fields: [projectId], references: [id])
+  createdByApiKey DevApiKey? @relation("TestSheetApiKey", fields: [createdByApiKeyId], references: [id])
+  cases           TestCase[]
+
+  @@index([tenantId, projectId], map: "idx_test_sheets_tenant_project")
+  @@index([archivedAt], map: "idx_test_sheets_archived")
+  @@map("test_sheets")
+}
+
+model TestCase {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  sheetId        String    @map("sheet_id") @db.Uuid
+  code           String    @db.VarChar(20)
+  title          String    @db.VarChar(300)
+  description    String?   @db.Text
+  expectedResult String?   @map("expected_result") @db.Text
+  module         String?   @db.VarChar(100)
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  sheet         TestSheet      @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  tasks         Task[]         @relation("TaskTestCase")
+  feedbackItems FeedbackItem[] @relation("FeedbackTestCase")
+
+  @@unique([sheetId, code])
+  @@index([tenantId])
+  @@index([archivedAt], map: "idx_test_cases_archived")
+  @@map("test_cases")
+}
+
+model DevApiKey {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  label       String    @db.VarChar(100)
+  personId    String?   @map("person_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash") @db.Text
+  tokenPrefix String    @map("token_prefix") @db.VarChar(16)
+  scopes      String[]  @default([])
+  lastUsedAt  DateTime? @map("last_used_at") @db.Timestamptz
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  person Person?     @relation("DevApiKeyOwner", fields: [personId], references: [id])
+  sheets TestSheet[] @relation("TestSheetApiKey")
+
+  @@index([tenantId, revokedAt])
+  @@map("dev_api_keys")
 }
