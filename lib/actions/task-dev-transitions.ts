@@ -17,21 +17,31 @@ export type DevTransitionResult =
   | { ok: true; newStatus: ApprovalStatus; affected: number }
   | { ok: false; status: number; error: string };
 
+export type DevTransitionOpts = {
+  rejectionReason?: string;
+  rejectionOrigin?: RejectionOrigin;
+  verifiedById?: string;
+};
+
 /**
- * Mutação partilhada entre a Dev API (Bruno → PATCH) e a UI de verificação
- * (F5). Aplica a transição a TODOS os FeedbackItems ligados à Task, numa
- * única updateMany. Rejeições guardam `rejectionReason` e `rejectionOrigin`.
+ * Aplica uma transição de `approvalStatus` a todos os FeedbackItems ligados
+ * a uma Task. Partilhado entre a Dev API (Bruno), a UI de verificação (F5)
+ * e as actions de aprovação (F3). Uma única `updateMany` atómica.
  *
- * Invariante simplificado: todos os feedbacks de uma Task estão no mesmo
- * approvalStatus (partilham o ciclo). Se algum não estiver, a updateMany
- * filtra por `approvalStatus = currentStatus` e `affected < items.length`
- * indica drift — tratamos como 409.
+ * Invariante: feedbacks de uma Task partilham `approvalStatus`. Drift vira
+ * 409 (mixed states). Race concorrente (updateMany count != items) → 409.
+ *
+ * Rejeições são detectadas via `rejectionTargetFor(currentStatus)` — cobre
+ * tanto dev reject (in_dev → needs_review) como verifier reject
+ * (ready_for_verification → in_dev). O `rejectionOrigin` é preenchido
+ * automaticamente a partir do mapping se não for forçado pelo caller.
+ * Rejeições `verifier` incrementam `verifyRejectionsCount`.
  */
 export async function applyDevTransition(
   db: TenantPrisma,
   taskId: string,
   target: DevTransitionTarget,
-  opts: { rejectionReason?: string; rejectionOrigin?: RejectionOrigin } = {},
+  opts: DevTransitionOpts = {},
 ): Promise<DevTransitionResult> {
   const task = await db.task.findFirst({
     where: { id: taskId, archivedAt: null },
@@ -58,16 +68,10 @@ export async function applyDevTransition(
   }
   const currentStatus = [...currentStatuses][0] as ApprovalStatus;
 
-  const isRejection = target === "needs_review";
+  const rejectionSpec = rejectionTargetFor(currentStatus);
+  const isRejection = !!rejectionSpec && rejectionSpec.to === target;
+
   if (isRejection) {
-    const allowed = rejectionTargetFor(currentStatus);
-    if (!allowed || allowed.to !== "needs_review") {
-      return {
-        ok: false,
-        status: 409,
-        error: `Cannot reject from state '${currentStatus}'`,
-      };
-    }
     if (!opts.rejectionReason) {
       return { ok: false, status: 400, error: "rejectionReason required on reject" };
     }
@@ -79,6 +83,10 @@ export async function applyDevTransition(
     };
   }
 
+  const effectiveOrigin: RejectionOrigin | null = isRejection
+    ? opts.rejectionOrigin ?? rejectionSpec!.origin
+    : null;
+
   const now = new Date();
   const result = await db.feedbackItem.updateMany({
     where: { taskId, approvalStatus: currentStatus },
@@ -87,13 +95,21 @@ export async function applyDevTransition(
       ...(isRejection
         ? {
             rejectionReason: opts.rejectionReason,
-            rejectionOrigin: opts.rejectionOrigin ?? "dev",
+            rejectionOrigin: effectiveOrigin,
+            ...(effectiveOrigin === "verifier"
+              ? { verifyRejectionsCount: { increment: 1 } }
+              : {}),
           }
         : {
             rejectionReason: null,
             rejectionOrigin: null,
           }),
-      ...(target === "verified" ? { verifiedAt: now } : {}),
+      ...(target === "verified"
+        ? {
+            verifiedAt: now,
+            ...(opts.verifiedById ? { verifiedById: opts.verifiedById } : {}),
+          }
+        : {}),
     },
   });
 

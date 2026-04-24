@@ -12,8 +12,13 @@ import {
 } from "@/lib/validation/feedback-approval";
 import { findOrCreateOpenTaskForTestCase } from "./find-or-create-open-task";
 import { deferTaskDraft } from "./defer-task-draft";
+import { applyDevTransition } from "./task-dev-transitions";
 import { field } from "./form-helpers";
 import type { ActionResult } from "./types";
+import {
+  verifyFeedbackSchema,
+  rejectVerificationSchema,
+} from "@/lib/validation/feedback-approval";
 
 async function loadItemForApproval(feedbackItemId: string) {
   const db = await getTenantDb();
@@ -173,5 +178,76 @@ export async function archiveFeedback(
   return { success: true };
 }
 
-// Marker: uso futuro no F5 verification UI.
-export { canVerifyFeedback };
+async function loadItemForVerification(feedbackItemId: string) {
+  const db = await getTenantDb();
+  const item = await db.feedbackItem.findFirst({
+    where: { id: feedbackItemId },
+    select: {
+      id: true,
+      tenantId: true,
+      taskId: true,
+      approvalStatus: true,
+      session: { select: { projectId: true } },
+    },
+  });
+  return { db, item };
+}
+
+export async function verifyFeedback(
+  _prev: ActionResult | undefined,
+  formData: FormData,
+): Promise<ActionResult> {
+  const auth = await requireWriter();
+  if (!auth.ok) return { error: auth.error };
+
+  const parsed = verifyFeedbackSchema.safeParse({
+    feedbackItemId: field(formData, "feedbackItemId"),
+  });
+  if (!parsed.success) return { error: firstZodError(parsed.error) };
+
+  const { db, item } = await loadItemForVerification(parsed.data.feedbackItemId);
+  if (!item) return { error: "Feedback não encontrado" };
+  if (!item.taskId) return { error: "Feedback sem task ligada" };
+  if (!canVerifyFeedback(auth.user, { tenantId: item.tenantId, projectId: item.session.projectId })) {
+    return { error: "Sem permissão para este projecto" };
+  }
+
+  const result = await applyDevTransition(db, item.taskId, "verified", {
+    verifiedById: auth.user.personId,
+  });
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/verifications");
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function rejectVerification(
+  _prev: ActionResult | undefined,
+  formData: FormData,
+): Promise<ActionResult> {
+  const auth = await requireWriter();
+  if (!auth.ok) return { error: auth.error };
+
+  const parsed = rejectVerificationSchema.safeParse({
+    feedbackItemId: field(formData, "feedbackItemId"),
+    rejectionReason: field(formData, "rejectionReason"),
+  });
+  if (!parsed.success) return { error: firstZodError(parsed.error) };
+
+  const { db, item } = await loadItemForVerification(parsed.data.feedbackItemId);
+  if (!item) return { error: "Feedback não encontrado" };
+  if (!item.taskId) return { error: "Feedback sem task ligada" };
+  if (!canVerifyFeedback(auth.user, { tenantId: item.tenantId, projectId: item.session.projectId })) {
+    return { error: "Sem permissão para este projecto" };
+  }
+
+  const result = await applyDevTransition(db, item.taskId, "in_dev", {
+    rejectionReason: parsed.data.rejectionReason,
+    rejectionOrigin: "verifier",
+  });
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/verifications");
+  return { success: true };
+}
