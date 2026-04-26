@@ -101,6 +101,7 @@ export function ProjectView({
         {project.client && (
           <Link href={`/project/${slug}/client`} className="cc-tab" style={{ textDecoration: "none" }}>👥 Cliente</Link>
         )}
+        <Link href={`/project/${slug}/test-sheets`} className="cc-tab" style={{ textDecoration: "none" }}>📝 Testes</Link>
         {canEdit && (
           <Link href={`/project/${slug}/tester-setup`} className="cc-tab" style={{ textDecoration: "none" }}>🎤 Tester</Link>
         )}

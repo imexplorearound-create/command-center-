@@ -66,7 +66,9 @@ export async function POST(request: NextRequest) {
         createdByApiKeyId: ctx.keyId,
         cases: {
           create: cases.map((c) => ({
-            tenantId: "",
+            // Middleware $extends só injecta tenantId no create de top-level;
+            // nested creates precisam de receber tenantId explicitamente.
+            tenantId: ctx.tenantId,
             code: c.code,
             title: c.title,
             description: c.description ?? null,

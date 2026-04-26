@@ -47,7 +47,7 @@ export async function createDevApiKeyAction(
       tokenHash,
       tokenPrefix: prefix,
       scopes: parsed.data.scopes,
-      expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
+      expiresAt: parsed.data.expiresAt,
     },
     select: { id: true },
   });
