@@ -70,9 +70,12 @@ export const listarTarefasTool: MaestroToolDef = {
     }
 
     const db = await getTenantDb();
+    const orderBy = parsed.data.onlyArchived
+      ? [{ archivedAt: "desc" as const }]
+      : [{ status: "asc" as const }, { kanbanOrder: "asc" as const }];
     const tasks = await db.task.findMany({
       where,
-      orderBy: [{ status: "asc" }, { kanbanOrder: "asc" }],
+      orderBy,
       take: parsed.data.limit ?? 20,
       include: {
         project: { select: { name: true, slug: true } },

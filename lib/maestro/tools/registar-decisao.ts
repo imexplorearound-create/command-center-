@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { getTenantDb } from "@/lib/tenant";
 import { decisionKindEnum, decisionSeverityEnum } from "@/lib/validation/decision-schema";
 import { resolveProjectSlug } from "@/lib/agent-helpers";
+import { gateAgentWrite } from "@/lib/maestro/agent-gating";
+import { MAESTRO_CHAT_AGENT_ID, MAESTRO_CHAT_CONFIDENCE } from "@/lib/maestro/trust-rules";
 import type { MaestroToolDef } from "./types";
+import { parseInput } from "./_task-helpers";
 
 const inputSchema = z.object({
   title: z.string().trim().min(3).max(200),
@@ -12,7 +15,7 @@ const inputSchema = z.object({
   kind: decisionKindEnum,
   severity: decisionSeverityEnum,
   projectSlug: z.string().optional(),
-  dueAt: z.string().optional(), // ISO 8601 com timezone
+  dueAt: z.string().datetime({ offset: true }).optional(),
 });
 
 export const registarDecisaoTool: MaestroToolDef = {
@@ -40,30 +43,24 @@ export const registarDecisaoTool: MaestroToolDef = {
     required: ["title", "kind", "severity"],
   },
   async execute(rawInput) {
-    const parsed = inputSchema.safeParse(rawInput);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        error: `Input inválido: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
-      };
-    }
+    const input = parseInput(inputSchema, rawInput);
+    if (!input.ok) return input;
 
     const db = await getTenantDb();
-    let projectId: string | null = null;
-    if (parsed.data.projectSlug) {
-      const resolved = await resolveProjectSlug(db, parsed.data.projectSlug);
-      if (!resolved) {
-        return {
-          ok: false,
-          error: `Projecto '${parsed.data.projectSlug}' não encontrado.`,
-        };
-      }
-      projectId = resolved.projectId;
-    }
+    const [resolvedProject, gating] = await Promise.all([
+      input.data.projectSlug ? resolveProjectSlug(db, input.data.projectSlug) : null,
+      gateAgentWrite({
+        agentId: MAESTRO_CHAT_AGENT_ID,
+        extractionType: "decisao",
+        confidence: MAESTRO_CHAT_CONFIDENCE,
+      }),
+    ]);
 
-    const dueAt = parsed.data.dueAt ? new Date(parsed.data.dueAt) : null;
-    if (dueAt && Number.isNaN(dueAt.getTime())) {
-      return { ok: false, error: "dueAt inválido (esperava ISO 8601 com offset)." };
+    if (input.data.projectSlug && !resolvedProject) {
+      return {
+        ok: false,
+        error: `Projecto '${input.data.projectSlug}' não encontrado.`,
+      };
     }
 
     const decision = await db.decision.create({
@@ -71,12 +68,12 @@ export const registarDecisaoTool: MaestroToolDef = {
         // tenantId é injectado pelo middleware tenantPrisma; "" é placeholder
         // para satisfazer o type checker (mesmo padrão de createDecision action).
         tenantId: "",
-        title: parsed.data.title,
-        context: parsed.data.context ?? null,
-        kind: parsed.data.kind,
-        severity: parsed.data.severity,
-        projectId,
-        dueAt,
+        title: input.data.title,
+        context: input.data.context ?? null,
+        kind: input.data.kind,
+        severity: input.data.severity,
+        projectId: resolvedProject?.projectId ?? null,
+        dueAt: input.data.dueAt ? new Date(input.data.dueAt) : null,
       },
       select: { id: true, title: true },
     });
@@ -84,7 +81,12 @@ export const registarDecisaoTool: MaestroToolDef = {
 
     return {
       ok: true,
-      data: { id: decision.id, titulo: decision.title },
+      data: {
+        id: decision.id,
+        titulo: decision.title,
+        gating: gating.type,
+        score: gating.score,
+      },
       display: `📌 Decision "${decision.title}" registada`,
     };
   },

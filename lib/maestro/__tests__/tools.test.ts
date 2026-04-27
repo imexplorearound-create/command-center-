@@ -441,12 +441,11 @@ describe("restaurar_tarefa", () => {
 });
 
 describe("listar_decisoes", () => {
-  it("filtra resolvedAt:null + reopenedById:null + esconde snoozed", async () => {
+  it("filtra resolvedAt:null + esconde snoozed", async () => {
     mocks.decision.findMany.mockResolvedValue([]);
     await listarDecisoesTool.execute({}, ctx);
     const where = mocks.decision.findMany.mock.calls[0][0].where;
     expect(where.resolvedAt).toBeNull();
-    expect(where.reopenedById).toBeNull();
     expect(where.OR).toBeDefined();
   });
 
@@ -499,6 +498,7 @@ describe("resolver_decisao", () => {
       title: "X",
       resolvedAt: null,
     });
+    mocks.trustScore.findFirst.mockResolvedValue({ score: 80 });
     mocks.decision.update.mockResolvedValue({});
     const r = await resolverDecisaoTool.execute(
       { decisionId: validUuid, resolutionNote: "feito" },
@@ -538,6 +538,7 @@ describe("registar_decisao", () => {
   });
 
   it("cria decisão sem projecto", async () => {
+    mocks.trustScore.findFirst.mockResolvedValue({ score: 80 });
     mocks.decision.create.mockResolvedValue({ id: "d1", title: "X" });
     const r = await registarDecisaoTool.execute(
       { title: "Cliente X parado", kind: "client_reply", severity: "warn" },

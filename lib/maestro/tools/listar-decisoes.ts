@@ -46,7 +46,6 @@ export const listarDecisoesTool: MaestroToolDef = {
     const db = await getTenantDb();
     const where: Record<string, unknown> = {
       resolvedAt: null,
-      reopenedById: null,
     };
 
     if (!parsed.data.includeSnoozed) {

@@ -2,7 +2,10 @@ import "server-only";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getTenantDb } from "@/lib/tenant";
+import { gateAgentWrite } from "@/lib/maestro/agent-gating";
+import { MAESTRO_CHAT_AGENT_ID, MAESTRO_CHAT_CONFIDENCE } from "@/lib/maestro/trust-rules";
 import type { MaestroToolDef } from "./types";
+import { parseInput } from "./_task-helpers";
 
 const inputSchema = z.object({
   decisionId: z.string().uuid(),
@@ -25,19 +28,21 @@ export const resolverDecisaoTool: MaestroToolDef = {
     required: ["decisionId"],
   },
   async execute(rawInput, ctx) {
-    const parsed = inputSchema.safeParse(rawInput);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        error: `Input inválido: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
-      };
-    }
+    const input = parseInput(inputSchema, rawInput);
+    if (!input.ok) return input;
 
     const db = await getTenantDb();
-    const existing = await db.decision.findUnique({
-      where: { id: parsed.data.decisionId },
-      select: { id: true, title: true, resolvedAt: true },
-    });
+    const [existing, gating] = await Promise.all([
+      db.decision.findUnique({
+        where: { id: input.data.decisionId },
+        select: { id: true, title: true, resolvedAt: true },
+      }),
+      gateAgentWrite({
+        agentId: MAESTRO_CHAT_AGENT_ID,
+        extractionType: "decisao",
+        confidence: MAESTRO_CHAT_CONFIDENCE,
+      }),
+    ]);
     if (!existing) return { ok: false, error: "Decision não encontrada." };
     if (existing.resolvedAt) {
       return { ok: false, error: `Decision "${existing.title}" já está resolvida.` };
@@ -48,7 +53,7 @@ export const resolverDecisaoTool: MaestroToolDef = {
       data: {
         resolvedAt: new Date(),
         resolvedById: ctx.personId,
-        resolutionNote: parsed.data.resolutionNote ?? null,
+        resolutionNote: input.data.resolutionNote ?? null,
         resolutionSource: "human",
       },
     });
@@ -56,7 +61,12 @@ export const resolverDecisaoTool: MaestroToolDef = {
 
     return {
       ok: true,
-      data: { id: existing.id, titulo: existing.title },
+      data: {
+        id: existing.id,
+        titulo: existing.title,
+        gating: gating.type,
+        score: gating.score,
+      },
       display: `✓ Decision "${existing.title}" resolvida`,
     };
   },
