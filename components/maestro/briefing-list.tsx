@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { BriefingListItem } from "@/lib/queries";
 import { markBriefingAsRead } from "@/lib/actions/briefing-actions";
@@ -20,12 +20,14 @@ const CHANNEL_LABELS: Record<string, string> = {
   inapp: "🪟 in-app",
 };
 
-function formatDate(d: Date): string {
-  return new Date(d).toLocaleDateString("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-  });
+const DATE_FMT = new Intl.DateTimeFormat("pt-PT", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+});
+
+function formatDate(d: Date | string): string {
+  return DATE_FMT.format(typeof d === "string" ? new Date(d) : d);
 }
 
 export function BriefingList({ briefings }: { briefings: BriefingListItem[] }) {
@@ -114,7 +116,7 @@ export function BriefingList({ briefings }: { briefings: BriefingListItem[] }) {
                     Falhou: {b.errorMessage}
                   </div>
                 ) : (
-                  <BriefingExpandedContent briefingId={b.id} />
+                  <div className="cc-briefing-content">{renderBriefingMarkdown(b.content)}</div>
                 )}
                 {isUnread && (
                   <div style={{ marginTop: 12 }}>
@@ -140,27 +142,4 @@ export function BriefingList({ briefings }: { briefings: BriefingListItem[] }) {
       })}
     </div>
   );
-}
-
-function BriefingExpandedContent({ briefingId }: { briefingId: string }) {
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/maestro/briefing/${briefingId}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error("Falhou a carregar briefing");
-        const j = await r.json();
-        if (!cancelled) setContent(j.content ?? "");
-      })
-      .catch((e) => { if (!cancelled) setError(e.message ?? "erro"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [briefingId]);
-
-  if (loading) return <div style={{ color: "var(--muted)", fontSize: "0.85rem" }}>A carregar…</div>;
-  if (error) return <div style={{ color: "var(--red, #dc2626)" }}>{error}</div>;
-  return <div className="cc-briefing-content">{renderBriefingMarkdown(content ?? "")}</div>;
 }

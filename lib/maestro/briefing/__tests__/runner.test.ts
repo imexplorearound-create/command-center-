@@ -121,7 +121,7 @@ describe("runBriefingForUser — paths", () => {
     );
   });
 
-  it("happy path → upsert pending, notify, update delivered", async () => {
+  it("happy path → notify primeiro, depois upsert directamente como delivered", async () => {
     mockCollectData.mockResolvedValue({ _empty: false });
     mockGenerate.mockResolvedValue({
       content: "# Olá Miguel\n- algo",
@@ -133,10 +133,12 @@ describe("runBriefingForUser — paths", () => {
     const r = await runBriefingForUser(tenant, baseUser);
     expect(r.status).toBe("delivered");
     expect(r.channel).toBe("email");
+    expect(mockNotifyUser).toHaveBeenCalled();
+    expect(mockTenantDb.maestroBriefing.upsert).toHaveBeenCalledTimes(1);
     expect(mockTenantDb.maestroBriefing.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
-          status: "pending",
+          status: "delivered",
           channel: "email",
           llmModel: "test-model",
           llmUsageInput: 200,
@@ -144,11 +146,7 @@ describe("runBriefingForUser — paths", () => {
         }),
       }),
     );
-    expect(mockTenantDb.maestroBriefing.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "delivered", channel: "email" }),
-      }),
-    );
+    expect(mockTenantDb.maestroBriefing.update).not.toHaveBeenCalled();
   });
 
   it("user sem canal real → channel=inapp, sem notifyUser", async () => {

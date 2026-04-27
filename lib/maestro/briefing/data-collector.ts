@@ -1,5 +1,7 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import type { TenantPrisma } from "@/lib/db";
+import { toDateStr } from "@/lib/agent-helpers";
 
 export interface BriefingUser {
   id: string;
@@ -85,10 +87,11 @@ export async function collectBriefingData(
   today.setUTCHours(0, 0, 0, 0);
   const dueSoonCutoff = new Date(today.getTime() + DUE_SOON_DAYS * MS_PER_DAY);
   const since24h = new Date(now.getTime() - MS_PER_DAY);
+  const isPrivileged = user.role === "admin" || user.role === "manager";
 
   const allowedProjectIds = await resolveAllowedProjectIds(db, user);
 
-  const taskBaseWhere: Record<string, unknown> = {
+  const taskBaseWhere: Prisma.TaskWhereInput = {
     archivedAt: null,
     assigneeId: user.personId,
   };
@@ -99,46 +102,59 @@ export async function collectBriefingData(
     ];
   }
 
-  const overdueRaw = await db.task.findMany({
-    where: {
-      ...taskBaseWhere,
-      deadline: { lt: today },
-      status: { notIn: ["concluida", "cancelada"] },
-    },
-    select: {
-      id: true,
-      title: true,
-      deadline: true,
-      priority: true,
-      project: { select: { slug: true, name: true } },
-    },
-    orderBy: { deadline: "asc" },
-    take: 20,
-  });
+  const taskListSelect = {
+    id: true,
+    title: true,
+    deadline: true,
+    priority: true,
+    project: { select: { slug: true, name: true } },
+  } as const;
+  const activeStatusFilter = { notIn: ["concluida", "cancelada"] };
 
-  const dueSoonRaw = await db.task.findMany({
-    where: {
-      ...taskBaseWhere,
-      deadline: { gte: today, lte: dueSoonCutoff },
-      status: { notIn: ["concluida", "cancelada"] },
-    },
-    select: {
-      id: true,
-      title: true,
-      deadline: true,
-      priority: true,
-      project: { select: { slug: true, name: true } },
-    },
-    orderBy: { deadline: "asc" },
-    take: 20,
-  });
+  const [
+    overdueRaw,
+    dueSoonRaw,
+    pendingValidations,
+    tasksCreated,
+    tasksCompleted,
+    feedbackItemsNew,
+    decisionsResolved,
+    trustDeltas,
+  ] = await Promise.all([
+    db.task.findMany({
+      where: { ...taskBaseWhere, deadline: { lt: today }, status: activeStatusFilter },
+      select: taskListSelect,
+      orderBy: { deadline: "asc" },
+      take: 20,
+    }),
+    db.task.findMany({
+      where: {
+        ...taskBaseWhere,
+        deadline: { gte: today, lte: dueSoonCutoff },
+        status: activeStatusFilter,
+      },
+      select: taskListSelect,
+      orderBy: { deadline: "asc" },
+      take: 20,
+    }),
+    collectPendingValidations(db, user, allowedProjectIds),
+    countRecentTasksCreated(db, allowedProjectIds, since24h),
+    countRecentTasksCompleted(db, user.personId, allowedProjectIds, since24h),
+    isPrivileged
+      ? db.feedbackItem.count({ where: { createdAt: { gte: since24h } } })
+      : Promise.resolve(0),
+    isPrivileged
+      ? db.decision.count({ where: { resolvedAt: { gte: since24h } } })
+      : Promise.resolve(0),
+    user.role === "admin" ? collectTrustDeltas(db, since24h) : Promise.resolve([]),
+  ]);
 
   const overdueTasks: OverdueTaskRow[] = overdueRaw.map((t) => ({
     id: t.id,
     title: t.title,
     projectSlug: t.project?.slug ?? null,
     projectName: t.project?.name ?? null,
-    deadline: (t.deadline as Date).toISOString().slice(0, 10),
+    deadline: toDateStr(t.deadline),
     daysLate: diffDays(today, t.deadline as Date),
     priority: t.priority,
   }));
@@ -148,27 +164,10 @@ export async function collectBriefingData(
     title: t.title,
     projectSlug: t.project?.slug ?? null,
     projectName: t.project?.name ?? null,
-    deadline: (t.deadline as Date).toISOString().slice(0, 10),
+    deadline: toDateStr(t.deadline),
     daysUntil: diffDays(t.deadline as Date, today),
     priority: t.priority,
   }));
-
-  const pendingValidations = await collectPendingValidations(db, user, allowedProjectIds);
-
-  const [tasksCreated, tasksCompleted, feedbackItemsNew, decisionsResolved] =
-    await Promise.all([
-      countRecentTasksCreated(db, user, allowedProjectIds, since24h),
-      countRecentTasksCompleted(db, user, allowedProjectIds, since24h),
-      user.role === "admin" || user.role === "manager"
-        ? db.feedbackItem.count({ where: { createdAt: { gte: since24h } } })
-        : Promise.resolve(0),
-      user.role === "admin" || user.role === "manager"
-        ? db.decision.count({ where: { resolvedAt: { gte: since24h } } })
-        : Promise.resolve(0),
-    ]);
-
-  const trustDeltas =
-    user.role === "admin" ? await collectTrustDeltas(db, since24h) : [];
 
   return {
     user,
@@ -217,16 +216,16 @@ async function collectPendingValidations(
   user: BriefingUser,
   allowedProjectIds: string[] | null,
 ): Promise<PendingValidationRow[]> {
-  const projectFilter =
-    allowedProjectIds === null
-      ? {}
-      : { OR: [{ projectId: { in: allowedProjectIds } }, { projectId: null }] };
-
-  const taskFilter: Record<string, unknown> = {
+  const taskFilter: Prisma.TaskWhereInput = {
     archivedAt: null,
     validationStatus: "por_confirmar",
-    ...projectFilter,
   };
+  if (allowedProjectIds !== null) {
+    taskFilter.OR = [
+      { projectId: { in: allowedProjectIds } },
+      { projectId: null },
+    ];
+  }
   if (user.role === "membro") taskFilter.assigneeId = user.personId;
 
   const tasks = await db.task.findMany({
@@ -246,11 +245,10 @@ async function collectPendingValidations(
 
 async function countRecentTasksCreated(
   db: TenantPrisma,
-  user: BriefingUser,
   allowedProjectIds: string[] | null,
   since: Date,
 ): Promise<number> {
-  const where: Record<string, unknown> = {
+  const where: Prisma.TaskWhereInput = {
     createdAt: { gte: since },
     archivedAt: null,
   };
@@ -262,13 +260,13 @@ async function countRecentTasksCreated(
 
 async function countRecentTasksCompleted(
   db: TenantPrisma,
-  user: BriefingUser,
+  personId: string,
   allowedProjectIds: string[] | null,
   since: Date,
 ): Promise<number> {
-  const where: Record<string, unknown> = {
+  const where: Prisma.TaskWhereInput = {
     completedAt: { gte: since },
-    assigneeId: user.personId,
+    assigneeId: personId,
   };
   if (allowedProjectIds !== null) {
     where.OR = [{ projectId: { in: allowedProjectIds } }, { projectId: null }];

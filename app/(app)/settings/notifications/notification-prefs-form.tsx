@@ -194,7 +194,7 @@ function PrefsSaveForm({
       </p>
 
       <BriefingPrefsSection
-        initial={briefing}
+        value={briefing}
         channels={channels}
         onChange={setBriefing}
       />

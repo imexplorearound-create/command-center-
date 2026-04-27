@@ -1,6 +1,8 @@
+import { cache } from "react";
 import { getTenantDb } from "./tenant";
 import type { Prisma } from "@prisma/client";
 import type { AuthUser } from "./auth/dal";
+import { firstNonEmptyLine } from "./maestro/briefing/util";
 import type {
   ProjectData,
   ObjectiveData,
@@ -586,19 +588,9 @@ export interface BriefingListItem {
   generatedAt: Date;
   deliveredAt: Date | null;
   readAt: Date | null;
+  content: string;
   excerpt: string;
   errorMessage: string | null;
-}
-
-export interface BriefingDetail extends BriefingListItem {
-  content: string;
-  locale: string;
-  llmModel: string | null;
-}
-
-function buildBriefingExcerpt(content: string): string {
-  const firstLine = content.split("\n").find((l) => l.trim().length > 0) ?? "";
-  return firstLine.replace(/^#+\s*/, "").slice(0, 160);
 }
 
 export async function getBriefingsForUser(
@@ -630,59 +622,18 @@ export async function getBriefingsForUser(
     generatedAt: r.generatedAt,
     deliveredAt: r.deliveredAt,
     readAt: r.readAt,
-    excerpt: buildBriefingExcerpt(r.content),
+    content: r.content,
+    excerpt: firstNonEmptyLine(r.content, 160),
     errorMessage: r.errorMessage,
   }));
 }
 
-export async function getBriefingById(
-  id: string,
-  userId: string,
-): Promise<BriefingDetail | null> {
-  const db = await getTenantDb();
-  const row = await db.maestroBriefing.findFirst({
-    where: { id, userId },
-    select: {
-      id: true,
-      briefingDate: true,
-      status: true,
-      channel: true,
-      generatedAt: true,
-      deliveredAt: true,
-      readAt: true,
-      content: true,
-      locale: true,
-      llmModel: true,
-      errorMessage: true,
-    },
-  });
-  if (!row) return null;
-  return {
-    id: row.id,
-    briefingDate: row.briefingDate,
-    status: row.status,
-    channel: row.channel,
-    generatedAt: row.generatedAt,
-    deliveredAt: row.deliveredAt,
-    readAt: row.readAt,
-    excerpt: buildBriefingExcerpt(row.content),
-    content: row.content,
-    locale: row.locale,
-    llmModel: row.llmModel,
-    errorMessage: row.errorMessage,
-  };
-}
-
-export async function getUnreadBriefingCount(userId: string): Promise<number> {
+export const getUnreadBriefingCount = cache(async (userId: string): Promise<number> => {
   const db = await getTenantDb();
   return db.maestroBriefing.count({
-    where: {
-      userId,
-      readAt: null,
-      status: "delivered",
-    },
+    where: { userId, readAt: null, status: "delivered" },
   });
-}
+});
 
 // ─── Content ────────────────────────────────────────────────
 

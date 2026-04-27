@@ -12,6 +12,12 @@ vi.mock("@/lib/maestro/briefing/scheduler", () => ({
 }));
 vi.mock("@/lib/maestro/briefing/runner", () => ({
   runBriefingForUser: mockRunForUser,
+  BRIEFING_STATUS: {
+    DELIVERED: "delivered",
+    SKIPPED_EXISTING: "skipped_existing",
+    SKIPPED_EMPTY: "skipped_empty",
+    FAILED: "failed",
+  },
 }));
 
 import { POST } from "../generate/route";

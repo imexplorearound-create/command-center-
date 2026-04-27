@@ -7,17 +7,16 @@ interface BriefingPrefs {
 }
 
 interface Props {
-  initial: BriefingPrefs;
+  value: BriefingPrefs;
   channels: string[];
   onChange: (next: BriefingPrefs) => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
-export function BriefingPrefsSection({ initial, channels, onChange }: Props) {
-  const enabled = initial.enabled;
-  const hour = initial.hour;
-  const channel = initial.channel ?? "";
+export function BriefingPrefsSection({ value, channels, onChange }: Props) {
+  const { enabled, hour } = value;
+  const channel = value.channel ?? "";
 
   return (
     <div style={{ marginTop: 24, padding: 16, border: "1px solid var(--cc-border, #e0e0e0)", borderRadius: 8 }}>
@@ -35,7 +34,7 @@ export function BriefingPrefsSection({ initial, channels, onChange }: Props) {
         <input
           type="checkbox"
           checked={enabled}
-          onChange={(e) => onChange({ ...initial, enabled: e.target.checked })}
+          onChange={(e) => onChange({ ...value, enabled: e.target.checked })}
         />
         Receber briefing diário
       </label>
@@ -46,7 +45,7 @@ export function BriefingPrefsSection({ initial, channels, onChange }: Props) {
           <select
             className="cc-input"
             value={hour}
-            onChange={(e) => onChange({ ...initial, hour: Number(e.target.value) })}
+            onChange={(e) => onChange({ ...value, hour: Number(e.target.value) })}
             disabled={!enabled}
           >
             {HOURS.map((h) => (
@@ -63,7 +62,7 @@ export function BriefingPrefsSection({ initial, channels, onChange }: Props) {
             className="cc-input"
             value={channel}
             onChange={(e) =>
-              onChange({ ...initial, channel: e.target.value || undefined })
+              onChange({ ...value, channel: e.target.value || undefined })
             }
             disabled={!enabled}
           >

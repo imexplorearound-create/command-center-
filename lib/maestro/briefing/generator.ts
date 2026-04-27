@@ -1,5 +1,6 @@
 import "server-only";
 import { getLLMForTenant } from "@/lib/maestro/gateway";
+import { extractTextBlock } from "@/lib/maestro/message-utils";
 import type { BriefingData } from "./data-collector";
 import { buildBriefingSystemPrompt, buildBriefingUserMessage } from "./prompt";
 
@@ -25,12 +26,7 @@ export async function generateBriefingMarkdown(
     messages: [{ role: "user", content: userMessage }],
   });
 
-  const text = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("\n")
-    .trim();
-
+  const text = extractTextBlock(response).trim();
   if (!text) {
     throw new Error("Briefing: LLM devolveu resposta vazia");
   }

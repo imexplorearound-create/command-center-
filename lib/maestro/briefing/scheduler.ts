@@ -46,62 +46,61 @@ export async function resolveBriefingTargets(
     select: { id: true, name: true, locale: true, timezone: true },
   });
 
-  const targets: BriefingTarget[] = [];
-
-  for (const t of tenants) {
-    const tenant: BriefingTenant = {
-      id: t.id,
-      name: t.name,
-      locale: t.locale,
-      timezone: t.timezone,
-    };
-
-    const hourLocal = options.force ? null : currentHourInTimezone(now, t.timezone);
-
-    const db = tenantPrisma(t.id);
-    const users = await db.user.findMany({
-      where: {
-        isActive: true,
-        role: { in: [...ELIGIBLE_ROLES] },
-        ...(options.userIdFilter ? { id: options.userIdFilter } : {}),
-      },
-      select: {
-        id: true,
-        role: true,
-        email: true,
-        telegramChatId: true,
-        whatsappPhoneId: true,
-        notificationPrefs: true,
-        person: { select: { id: true, name: true } },
-      },
-    });
-
-    for (const u of users) {
-      const prefs = (u.notificationPrefs ?? {}) as {
-        briefing?: { enabled?: boolean; hour?: number };
+  const perTenant = await Promise.all(
+    tenants.map(async (t): Promise<BriefingTarget[]> => {
+      const tenant: BriefingTenant = {
+        id: t.id,
+        name: t.name,
+        locale: t.locale,
+        timezone: t.timezone,
       };
-      const briefingPrefs = prefs.briefing ?? {};
-      if (briefingPrefs.enabled === false) continue;
-
-      const userHour = clampHour(briefingPrefs.hour ?? BRIEFING_DEFAULT_HOUR);
-      if (hourLocal !== null && userHour !== hourLocal) continue;
-
-      targets.push({
-        tenant,
-        user: {
-          id: u.id,
-          role: u.role,
-          email: u.email,
-          telegramChatId: u.telegramChatId,
-          whatsappPhoneId: u.whatsappPhoneId,
-          notificationPrefs: u.notificationPrefs as Record<string, unknown> | null,
-          person: u.person,
+      const hourLocal = options.force ? null : currentHourInTimezone(now, t.timezone);
+      const db = tenantPrisma(t.id);
+      const users = await db.user.findMany({
+        where: {
+          isActive: true,
+          role: { in: [...ELIGIBLE_ROLES] },
+          ...(options.userIdFilter ? { id: options.userIdFilter } : {}),
+        },
+        select: {
+          id: true,
+          role: true,
+          email: true,
+          telegramChatId: true,
+          whatsappPhoneId: true,
+          notificationPrefs: true,
+          person: { select: { id: true, name: true } },
         },
       });
-    }
-  }
 
-  return targets;
+      const matched: BriefingTarget[] = [];
+      for (const u of users) {
+        const prefs = (u.notificationPrefs ?? {}) as {
+          briefing?: { enabled?: boolean; hour?: number };
+        };
+        const briefingPrefs = prefs.briefing ?? {};
+        if (briefingPrefs.enabled === false) continue;
+        const userHour = clampHour(briefingPrefs.hour ?? BRIEFING_DEFAULT_HOUR);
+        if (hourLocal !== null && userHour !== hourLocal) continue;
+
+        matched.push({
+          tenant,
+          user: {
+            id: u.id,
+            role: u.role,
+            email: u.email,
+            telegramChatId: u.telegramChatId,
+            whatsappPhoneId: u.whatsappPhoneId,
+            notificationPrefs: u.notificationPrefs as Record<string, unknown> | null,
+            person: u.person,
+          },
+        });
+      }
+      return matched;
+    }),
+  );
+
+  return perTenant.flat();
 }
 
 function clampHour(value: unknown): number {
@@ -110,13 +109,19 @@ function clampHour(value: unknown): number {
   return Math.min(23, Math.max(0, Math.floor(n)));
 }
 
+const hourFmtCache = new Map<string, Intl.DateTimeFormat>();
+
 export function currentHourInTimezone(now: Date, timezone: string): number {
   try {
-    const fmt = new Intl.DateTimeFormat("en-GB", {
-      timeZone: timezone,
-      hour: "2-digit",
-      hour12: false,
-    });
+    let fmt = hourFmtCache.get(timezone);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: timezone,
+        hour: "2-digit",
+        hour12: false,
+      });
+      hourFmtCache.set(timezone, fmt);
+    }
     const parts = fmt.formatToParts(now);
     const hourPart = parts.find((p) => p.type === "hour");
     if (!hourPart) return now.getUTCHours();

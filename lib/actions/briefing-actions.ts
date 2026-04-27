@@ -31,24 +31,26 @@ export async function triggerMyBriefing(): Promise<
   const auth = await requireWriter();
   if (!auth.ok) return { error: auth.error };
 
-  const tenant = await basePrisma.tenant.findUnique({
-    where: { id: auth.user.tenantId },
-    select: { id: true, name: true, locale: true, timezone: true },
-  });
+  const db = await getTenantDb();
+  const [tenant, userRecord] = await Promise.all([
+    basePrisma.tenant.findUnique({
+      where: { id: auth.user.tenantId },
+      select: { id: true, name: true, locale: true, timezone: true },
+    }),
+    db.user.findUnique({
+      where: { id: auth.user.userId },
+      select: {
+        id: true,
+        role: true,
+        email: true,
+        telegramChatId: true,
+        whatsappPhoneId: true,
+        notificationPrefs: true,
+        person: { select: { id: true, name: true } },
+      },
+    }),
+  ]);
   if (!tenant) return { error: "Tenant não encontrado" };
-
-  const userRecord = await basePrisma.user.findUnique({
-    where: { id: auth.user.userId },
-    select: {
-      id: true,
-      role: true,
-      email: true,
-      telegramChatId: true,
-      whatsappPhoneId: true,
-      notificationPrefs: true,
-      person: { select: { id: true, name: true } },
-    },
-  });
   if (!userRecord) return { error: "User não encontrado" };
 
   const result = await runBriefingForUser(tenant, userRecord, { force: true });
