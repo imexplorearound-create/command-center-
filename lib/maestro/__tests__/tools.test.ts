@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mocks, mockDb } = vi.hoisted(() => {
+const { mocks, mockDb, mockBasePrisma } = vi.hoisted(() => {
   const m = {
     project: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     task: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
     person: { findMany: vi.fn(), findFirst: vi.fn() },
     trustScore: { findUnique: vi.fn(), findFirst: vi.fn() },
+    decision: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
   };
-  return { mocks: m, mockDb: m };
+  const base = {
+    user: { findUnique: vi.fn() },
+  };
+  return { mocks: m, mockDb: m, mockBasePrisma: base };
 });
 
 vi.mock("@/lib/db", () => ({
   prisma: mockDb,
+  basePrisma: mockBasePrisma,
 }));
 
 vi.mock("@/lib/tenant", () => ({
@@ -30,6 +35,11 @@ import { mudarEstadoTarefaTool } from "../tools/mudar-estado-tarefa";
 import { concluirTarefaTool } from "../tools/concluir-tarefa";
 import { comentarTarefaTool } from "../tools/comentar-tarefa";
 import { atribuirResponsavelTool } from "../tools/atribuir-responsavel";
+import { arquivarTarefaTool } from "../tools/arquivar-tarefa";
+import { restaurarTarefaTool } from "../tools/restaurar-tarefa";
+import { listarDecisoesTool } from "../tools/listar-decisoes";
+import { resolverDecisaoTool } from "../tools/resolver-decisao";
+import { registarDecisaoTool } from "../tools/registar-decisao";
 
 const ctx = { userId: "u1", personId: "p1" };
 
@@ -340,6 +350,209 @@ describe("atribuir_responsavel", () => {
     expect(r.ok).toBe(true);
     expect(mocks.task.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { assigneeId: "person-1" } })
+    );
+  });
+});
+
+// ─── Sprint 6c: archive/restore + decisões ──────────────────
+
+describe("arquivar_tarefa", () => {
+  it("bloqueia se a tarefa pertence a workflow activo", async () => {
+    mockFoundTask();
+    mocks.task.findUnique.mockResolvedValueOnce({
+      archivedAt: null,
+      workflowInstanceTasks: [{ id: "w1" }],
+    });
+    mocks.trustScore.findFirst.mockResolvedValue({ score: 80 });
+    const r = await arquivarTarefaTool.execute({ idOrTitle: "Tarefa" }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/workflow activo/);
+    expect(mocks.task.update).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia se já arquivada", async () => {
+    mockFoundTask();
+    mocks.task.findUnique.mockResolvedValueOnce({
+      archivedAt: new Date(),
+      workflowInstanceTasks: [],
+    });
+    mocks.trustScore.findFirst.mockResolvedValue({ score: 80 });
+    const r = await arquivarTarefaTool.execute({ idOrTitle: "Tarefa" }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/já está arquivada/);
+  });
+
+  it("sucesso → marca archivedAt", async () => {
+    mockFoundTask();
+    mocks.task.findUnique.mockResolvedValueOnce({
+      archivedAt: null,
+      workflowInstanceTasks: [],
+    });
+    mocks.trustScore.findFirst.mockResolvedValue({ score: 80 });
+    mocks.task.update.mockResolvedValue({});
+    const r = await arquivarTarefaTool.execute({ idOrTitle: "Tarefa" }, ctx);
+    expect(r.ok).toBe(true);
+    expect(mocks.task.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ archivedAt: expect.any(Date) }),
+      }),
+    );
+  });
+});
+
+describe("restaurar_tarefa", () => {
+  const validUuid = "11111111-1111-4111-8111-111111111111";
+
+  it("bloqueia se user não é admin", async () => {
+    mockBasePrisma.user.findUnique.mockResolvedValue({ role: "membro" });
+    const r = await restaurarTarefaTool.execute({ id: validUuid }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/admin-only/);
+  });
+
+  it("bloqueia se tarefa não está arquivada", async () => {
+    mockBasePrisma.user.findUnique.mockResolvedValue({ role: "admin" });
+    mocks.task.findUnique.mockResolvedValue({
+      id: validUuid,
+      title: "X",
+      archivedAt: null,
+      project: null,
+    });
+    const r = await restaurarTarefaTool.execute({ id: validUuid }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/não está arquivada/);
+  });
+
+  it("admin restaura → archivedAt vira null", async () => {
+    mockBasePrisma.user.findUnique.mockResolvedValue({ role: "admin" });
+    mocks.task.findUnique.mockResolvedValue({
+      id: validUuid,
+      title: "X",
+      archivedAt: new Date(),
+      project: { slug: "p1" },
+    });
+    mocks.task.update.mockResolvedValue({});
+    const r = await restaurarTarefaTool.execute({ id: validUuid }, ctx);
+    expect(r.ok).toBe(true);
+    expect(mocks.task.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { archivedAt: null } }),
+    );
+  });
+});
+
+describe("listar_decisoes", () => {
+  it("filtra resolvedAt:null + reopenedById:null + esconde snoozed", async () => {
+    mocks.decision.findMany.mockResolvedValue([]);
+    await listarDecisoesTool.execute({}, ctx);
+    const where = mocks.decision.findMany.mock.calls[0][0].where;
+    expect(where.resolvedAt).toBeNull();
+    expect(where.reopenedById).toBeNull();
+    expect(where.OR).toBeDefined();
+  });
+
+  it("includeSnoozed:true não filtra snoozedUntil", async () => {
+    mocks.decision.findMany.mockResolvedValue([]);
+    await listarDecisoesTool.execute({ includeSnoozed: true }, ctx);
+    const where = mocks.decision.findMany.mock.calls[0][0].where;
+    expect(where.OR).toBeUndefined();
+  });
+
+  it("filtra por kind e severity", async () => {
+    mocks.decision.findMany.mockResolvedValue([]);
+    await listarDecisoesTool.execute(
+      { kind: "client_reply", severity: "block" },
+      ctx,
+    );
+    const where = mocks.decision.findMany.mock.calls[0][0].where;
+    expect(where.kind).toBe("client_reply");
+    expect(where.severity).toBe("block");
+  });
+
+  it("projectSlug inválido devolve erro", async () => {
+    mocks.project.findFirst.mockResolvedValue(null);
+    const r = await listarDecisoesTool.execute({ projectSlug: "ghost" }, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/ghost/);
+  });
+});
+
+describe("resolver_decisao", () => {
+  const validUuid = "22222222-2222-4222-8222-222222222222";
+
+  it("bloqueia se decisão já resolvida", async () => {
+    mocks.decision.findUnique.mockResolvedValue({
+      id: validUuid,
+      title: "X",
+      resolvedAt: new Date(),
+    });
+    const r = await resolverDecisaoTool.execute(
+      { decisionId: validUuid },
+      ctx,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/já está resolvida/);
+  });
+
+  it("sucesso → marca resolvedAt + resolvedById + resolutionSource human", async () => {
+    mocks.decision.findUnique.mockResolvedValue({
+      id: validUuid,
+      title: "X",
+      resolvedAt: null,
+    });
+    mocks.decision.update.mockResolvedValue({});
+    const r = await resolverDecisaoTool.execute(
+      { decisionId: validUuid, resolutionNote: "feito" },
+      ctx,
+    );
+    expect(r.ok).toBe(true);
+    expect(mocks.decision.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          resolvedAt: expect.any(Date),
+          resolvedById: ctx.personId,
+          resolutionNote: "feito",
+          resolutionSource: "human",
+        }),
+      }),
+    );
+  });
+});
+
+describe("registar_decisao", () => {
+  it("rejeita projectSlug inexistente", async () => {
+    mocks.project.findFirst.mockResolvedValue(null);
+    const r = await registarDecisaoTool.execute(
+      { title: "Cliente X parado", kind: "client_reply", severity: "warn", projectSlug: "ghost" },
+      ctx,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/ghost/);
+  });
+
+  it("rejeita dueAt malformado", async () => {
+    const r = await registarDecisaoTool.execute(
+      { title: "X", kind: "other", severity: "pend", dueAt: "ontem-de-tarde" },
+      ctx,
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it("cria decisão sem projecto", async () => {
+    mocks.decision.create.mockResolvedValue({ id: "d1", title: "X" });
+    const r = await registarDecisaoTool.execute(
+      { title: "Cliente X parado", kind: "client_reply", severity: "warn" },
+      ctx,
+    );
+    expect(r.ok).toBe(true);
+    expect(mocks.decision.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Cliente X parado",
+          kind: "client_reply",
+          severity: "warn",
+          projectId: null,
+        }),
+      }),
     );
   });
 });

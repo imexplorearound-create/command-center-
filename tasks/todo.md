@@ -903,3 +903,52 @@ Restart dev server.
 - Timestamp do "delivered" reflectido no email (hoje só na DB)
 - Falhas de canal individual (telegram down) deveriam marcar `failed_delivery` em vez de `delivered`
 
+---
+
+# Sprint 6c — Mais tools no chat (archive/restore + Decisions)
+
+**Estado:** Código completo, pendente teste manual via chat.
+**Data:** 2026-04-27
+**Pré-condição:** Sprint 6d verde.
+**Filosofia:** Maestro fecha o ciclo de gestão de tarefas (criar, mover, comentar, atribuir, concluir já existiam — falta arquivar/restaurar/ver-arquivadas) e passa a tocar em Decisions (item operacional do dashboard).
+
+## Decisões fechadas
+
+1. **Tools novas:** `arquivar_tarefa`, `restaurar_tarefa`, `listar_decisoes`, `resolver_decisao`, `registar_decisao`. Mais 1 extensão: `listar_tarefas` ganha `includeArchived` + `onlyArchived`.
+2. **`restaurar_tarefa` é admin-only** — consistente com `restoreTask` action. Verificado via `basePrisma.user.findUnique`. Pesquisa por título não funciona em arquivadas (UUID obrigatório) para evitar zona cinzenta.
+3. **`arquivar_tarefa` bloqueia se workflow activo** — mesma regra de `archiveTask` action. Verifica `workflowInstanceTasks` com `instance.status: "em_curso"`.
+4. **`resolver_decisao` marca `resolutionSource="human"` + `resolvedById = ctx.personId`** — alinha com `resolveDecision` action.
+5. **`registar_decisao`** reusa `decisionKindEnum` + `decisionSeverityEnum` do schema; `tenantId: ""` placeholder injectado pelo middleware tenantPrisma (mesmo padrão do action).
+6. **`listar_decisoes` esconde snoozed por defeito** — `OR: [{snoozedUntil: null}, {snoozedUntil: {lte: now}}]`. Flag `includeSnoozed:true` para ver todas.
+
+## Executado pelo Claude
+
+- ✅ `lib/maestro/tools/arquivar-tarefa.ts` — gating + bloqueio workflow + revalidate
+- ✅ `lib/maestro/tools/restaurar-tarefa.ts` — admin gate via `basePrisma.user.findUnique`
+- ✅ `lib/maestro/tools/listar-tarefas.ts` — flags `includeArchived` / `onlyArchived` + campo `arquivada` no output
+- ✅ `lib/maestro/tools/listar-decisoes.ts` — filtros kind/severity/projectSlug/includeSnoozed; ordena por priority desc
+- ✅ `lib/maestro/tools/resolver-decisao.ts` — bloqueia se já resolvida; usa `ctx.personId` para resolvedById
+- ✅ `lib/maestro/tools/registar-decisao.ts` — Zod com decisionKind/Severity enums; resolveProjectSlug opcional; valida ISO 8601 do dueAt
+- ✅ Registry em `lib/maestro/tools/index.ts` — 5 tools novas em CORE_TOOLS (system prompt rebuild automático via `buildSystemPrompt`)
+- ✅ Tests vitest: 10 novos em `lib/maestro/__tests__/tools.test.ts` (508 total = 498 antes + 10)
+- ✅ tsc clean / vitest 508/508 / build verde
+
+## Verificação manual (Miguel via chat Maestro)
+
+- [ ] M1. "Lista tarefas arquivadas no Aura PMS" → `listar_tarefas` com `onlyArchived:true`
+- [ ] M2. "Arquiva a tarefa T-001" → `arquivar_tarefa`; verifica que sai do kanban
+- [ ] M3. Tentar arquivar uma tarefa que está num workflow activo → erro com mensagem clara
+- [ ] M4. Login membro → "Restaura tarefa <uuid>" → "Sem permissão: restaurar tarefas é admin-only"
+- [ ] M5. Login admin → "Restaura tarefa <uuid>" → volta ao kanban
+- [ ] M6. "Que decisões abertas tenho?" → `listar_decisoes`
+- [ ] M7. "Filtra decisões com severity block" → param severity propagado
+- [ ] M8. "Regista decisão: cliente X parado há 5 dias, kind client_reply, severity warn, no projecto <slug>" → `registar_decisao` cria
+- [ ] M9. "Resolve a decisão <uuid> com nota 'cliente respondeu'" → `resolver_decisao`; aparece em Resolvidas 24h
+- [ ] M10. Tentar resolver decisão já resolvida → erro
+
+## Decisões deferidas
+- **Snooze decisão via chat** — adicionar `snoozar_decisao` quando user pedir
+- **Reabrir decisão via chat** — `reabrir_decisao`; precisa lógica de cadeia `reopenedById`
+- **Bulk archive** — uma tool que arquive N tarefas de uma vez
+- **Tools de Workflow** (criar instância, listar pendentes) — mais alcance, fica para 6c.5
+

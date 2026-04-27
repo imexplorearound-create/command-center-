@@ -9,13 +9,15 @@ const inputSchema = z.object({
   projectSlug: z.string().optional(),
   status: taskStatusEnum.optional(),
   assigneeName: z.string().optional(),
+  includeArchived: z.boolean().optional(),
+  onlyArchived: z.boolean().optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
 
 export const listarTarefasTool: MaestroToolDef = {
   name: "listar_tarefas",
   description:
-    "Lista tarefas não-arquivadas com filtros opcionais. Use para responder perguntas como 'que tarefas tem a Maria?' ou 'mostra-me o backlog do Aura PMS'.",
+    "Lista tarefas não-arquivadas com filtros opcionais. Use para responder perguntas como 'que tarefas tem a Maria?' ou 'mostra-me o backlog do Aura PMS'. Para ver arquivadas usa includeArchived ou onlyArchived.",
   inputSchema: {
     type: "object",
     properties: {
@@ -33,6 +35,14 @@ export const listarTarefasTool: MaestroToolDef = {
         type: "string",
         description: "Nome (ou parte) do responsável.",
       },
+      includeArchived: {
+        type: "boolean",
+        description: "Se true, inclui tarefas arquivadas no resultado. Default false.",
+      },
+      onlyArchived: {
+        type: "boolean",
+        description: "Se true, devolve APENAS arquivadas (ignora includeArchived). Default false.",
+      },
       limit: {
         type: "number",
         description: "Máximo de tarefas (default 20).",
@@ -46,7 +56,9 @@ export const listarTarefasTool: MaestroToolDef = {
       return { ok: false, error: "Input inválido para listar_tarefas" };
     }
 
-    const where: Record<string, unknown> = { archivedAt: null };
+    const where: Record<string, unknown> = {};
+    if (parsed.data.onlyArchived) where.archivedAt = { not: null };
+    else if (!parsed.data.includeArchived) where.archivedAt = null;
     if (parsed.data.status) where.status = parsed.data.status;
     if (parsed.data.projectSlug) {
       where.project = { slug: parsed.data.projectSlug };
@@ -80,6 +92,7 @@ export const listarTarefasTool: MaestroToolDef = {
         prioridade: t.priority,
         prazo: toDateStr(t.deadline),
         validacao: t.validationStatus,
+        arquivada: t.archivedAt !== null,
       })),
       display: `${tasks.length} tarefa(s)`,
     };
