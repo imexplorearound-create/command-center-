@@ -1102,6 +1102,10 @@ model FeedbackItem {
   // `approvalStatus` modela o ciclo do feedback (tester↔dev), não o kanban
   // da Task. Ver docs/feedback-loop.md para transições válidas.
   testCaseId            String?   @map("test_case_id") @db.Uuid
+  // String crua que o tester escreveu no plugin (ex.: "T-003"). Persiste mesmo
+  // quando não há TestCase com esse código no projecto — a triagem vê o que
+  // foi tipado e pode corrigir typos sem perder informação.
+  testCaseCodeRaw       String?   @map("test_case_code_raw") @db.VarChar(50)
   // Códigos T-NNN mencionados na transcrição mas não resolvidos para `testCaseId`
   // (ex.: N matches ambíguos, ou extras além do dropdown). Para a triagem
   // ver e decidir. Separado de `contextSnapshot` para preservar a shape

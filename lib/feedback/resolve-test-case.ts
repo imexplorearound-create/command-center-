@@ -1,3 +1,5 @@
+import type { TenantPrisma } from "@/lib/db";
+
 const TEST_CASE_REGEX = /T-\d+/gi;
 
 /**
@@ -60,4 +62,20 @@ export function resolveTestCaseFromVoice(input: {
   }
 
   return { kind: "none", mentionedCodes: [] };
+}
+
+export async function findActiveTestCaseId(
+  db: TenantPrisma,
+  projectId: string,
+  code: string,
+): Promise<string | null> {
+  const match = await db.testCase.findFirst({
+    where: {
+      code,
+      archivedAt: null,
+      sheet: { projectId, archivedAt: null },
+    },
+    select: { id: true },
+  });
+  return match?.id ?? null;
 }

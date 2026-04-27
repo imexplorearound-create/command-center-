@@ -76,6 +76,7 @@ export default async function FeedbackDetailPage({
       handoffResolvedAt: item.task?.handoffResolvedAt?.toISOString() ?? null,
       approvalStatus: item.approvalStatus as ApprovalStatus,
       mentionedTestCaseCodes: item.mentionedTestCaseCodes,
+      testCaseCodeRaw: item.testCaseCodeRaw,
       testCase: item.testCase
         ? { id: item.testCase.id, code: item.testCase.code, title: item.testCase.title }
         : null,

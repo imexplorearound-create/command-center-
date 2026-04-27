@@ -11,6 +11,7 @@ import type { FeedbackClassification, FeedbackItemStatus, FeedbackSessionStatus 
 import { triageFieldsSchema, type TriageFieldsInput } from "@/lib/validation/feedback-schema";
 import { firstZodError } from "@/lib/validation/project-schema";
 import { parseAcceptanceCriteria } from "@/lib/feedback-utils";
+import { findActiveTestCaseId } from "@/lib/feedback/resolve-test-case";
 import { HANDOFF_STATUS } from "@/lib/handoff-status";
 
 async function unlinkAssetIfSafe(url: string | null | undefined): Promise<void> {
@@ -112,6 +113,41 @@ export async function updateFeedbackItemTriage(
     }
     throw err;
   }
+}
+
+// ─── Update Test Case Code (raw input do tester) ────────────
+
+// Permite ao triador corrigir typos no código que o tester escreveu no plugin.
+// Re-tenta o lookup contra TestCases activos do projecto: se bate, liga
+// `testCaseId`; senão guarda só a string crua (visível a laranja na UI).
+export async function updateFeedbackItemTestCaseCode(
+  itemId: string,
+  rawCode: string | null,
+): Promise<ActionResult> {
+  const auth = await requireManager();
+  if (!auth.ok) return { error: auth.error };
+
+  const db = await getTenantDb();
+
+  const item = await db.feedbackItem.findUnique({
+    where: { id: itemId },
+    select: { sessionId: true, session: { select: { projectId: true } } },
+  });
+  if (!item) return { error: "Item não encontrado" };
+
+  const normalized = rawCode?.trim().toUpperCase() || null;
+  const testCaseId = normalized
+    ? await findActiveTestCaseId(db, item.session.projectId, normalized)
+    : null;
+
+  await db.feedbackItem.update({
+    where: { id: itemId },
+    data: { testCaseCodeRaw: normalized, testCaseId },
+  });
+
+  revalidatePath("/feedback");
+  revalidatePath(`/feedback/${item.sessionId}`);
+  return { success: true };
 }
 
 // ─── Convert to Task ────────────────────────────────────────

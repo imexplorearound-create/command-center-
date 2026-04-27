@@ -17,7 +17,7 @@ import { join } from "path";
 import { decodeImageDataUrl } from "@/lib/feedback-utils";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildCorsHeaders, isAllowedOrigin } from "@/lib/cors";
-import { resolveTestCaseFromVoice } from "@/lib/feedback/resolve-test-case";
+import { findActiveTestCaseId, resolveTestCaseFromVoice } from "@/lib/feedback/resolve-test-case";
 import { defer } from "@/lib/utils/defer";
 
 export async function OPTIONS(request: NextRequest) {
@@ -234,18 +234,14 @@ export async function POST(request: NextRequest) {
     dropdownCode: data.testCaseCode ?? null,
     transcript,
   });
-  let testCaseId: string | null = null;
-  if (resolution.kind === "explicit" || resolution.kind === "single") {
-    const match = await db.testCase.findFirst({
-      where: {
-        code: resolution.code,
-        archivedAt: null,
-        sheet: { projectId: project.id, archivedAt: null },
-      },
-      select: { id: true },
-    });
-    testCaseId = match?.id ?? null;
-  }
+  const testCaseId =
+    resolution.kind === "explicit" || resolution.kind === "single"
+      ? await findActiveTestCaseId(db, project.id, resolution.code)
+      : null;
+
+  // Preserva o que o tester escreveu mesmo se não bater num TestCase real.
+  // Permite à triagem ver/corrigir typos sem perder informação.
+  const testCaseCodeRaw = resolution.kind === "explicit" ? resolution.code : null;
 
   await db.$transaction([
     db.feedbackItem.create({
@@ -268,6 +264,7 @@ export async function POST(request: NextRequest) {
         screenshotUrl,
         status: "pending",
         testCaseId,
+        testCaseCodeRaw,
         mentionedTestCaseCodes: resolution.mentionedCodes,
       },
     }),
