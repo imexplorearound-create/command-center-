@@ -6,6 +6,8 @@ import { TopNavLinks } from "./top-nav-links";
 type Props = {
   userName: string;
   userEmail: string;
+  userRole: string;
+  unreadBriefings?: number;
   maestroState?: "ok" | "backlog" | "down";
 };
 
@@ -25,7 +27,7 @@ const MAESTRO_STATES: Record<"ok" | "backlog" | "down", { color: string; label: 
   down:    { color: "var(--error, #C0392B)",   label: "Maestro · down" },
 };
 
-export function TopNav({ userName, userEmail, maestroState = "ok" }: Props) {
+export function TopNav({ userName, userEmail, userRole, unreadBriefings, maestroState = "ok" }: Props) {
   const { color: maestroColor, label: maestroLabel } = MAESTRO_STATES[maestroState];
 
   return (
@@ -48,7 +50,7 @@ export function TopNav({ userName, userEmail, maestroState = "ok" }: Props) {
         <LogoMark size={22} />
       </Link>
 
-      <TopNavLinks />
+      <TopNavLinks role={userRole} badges={{ briefings: unreadBriefings }} />
 
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <time

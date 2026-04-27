@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions/settings-actions";
 import { toast } from "sonner";
 import { MessageCircle, Phone, Check } from "lucide-react";
+import { BriefingPrefsSection } from "@/components/maestro/briefing-prefs-section";
 
 const CHANNELS = ["email", "telegram", "whatsapp"] as const;
 
@@ -142,17 +143,65 @@ export function NotificationPrefsForm({ currentPrefs, telegramLinked, whatsappPh
       </div>
 
       {/* Save preferences */}
-      <form action={prefsAction}>
-        <input type="hidden" name="prefs" value={JSON.stringify({ channels })} />
-
-        <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
-          Todos os alertas são enviados para os canais seleccionados acima.
-        </p>
-
-        <button type="submit" disabled={prefsPending} className="cc-btn cc-btn-primary">
-          {prefsPending ? "..." : t("common.save")}
-        </button>
-      </form>
+      <PrefsSaveForm
+        action={prefsAction}
+        pending={prefsPending}
+        channels={channels}
+        currentPrefs={currentPrefs}
+        saveLabel={t("common.save")}
+      />
     </div>
+  );
+}
+
+function PrefsSaveForm({
+  action,
+  pending,
+  channels,
+  currentPrefs,
+  saveLabel,
+}: {
+  action: (formData: FormData) => void;
+  pending: boolean;
+  channels: string[];
+  currentPrefs: Record<string, unknown>;
+  saveLabel: string;
+}) {
+  const initialBriefing = (currentPrefs.briefing ?? undefined) as
+    | { enabled?: boolean; hour?: number; channel?: string }
+    | undefined;
+  const [briefing, setBriefing] = useState<{
+    enabled: boolean;
+    hour: number;
+    channel?: string;
+  }>({
+    enabled: initialBriefing?.enabled ?? true,
+    hour: initialBriefing?.hour ?? 8,
+    channel: initialBriefing?.channel,
+  });
+
+  const prefs = JSON.stringify({
+    channels,
+    briefing: { enabled: briefing.enabled, hour: briefing.hour, channel: briefing.channel || undefined },
+  });
+
+  return (
+    <form action={action}>
+      <input type="hidden" name="prefs" value={prefs} />
+
+      <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
+        Todos os alertas são enviados para os canais seleccionados acima.
+      </p>
+
+      <BriefingPrefsSection
+        initial={briefing}
+        channels={channels}
+        onChange={setBriefing}
+      />
+
+      <button type="submit" disabled={pending} className="cc-btn cc-btn-primary" style={{ marginTop: 16 }}>
+        {pending ? "..." : saveLabel}
+      </button>
+    </form>
   );
 }

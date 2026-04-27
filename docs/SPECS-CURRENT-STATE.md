@@ -356,13 +356,13 @@ Bearer token dedicado (`HANDOFF_API_SECRET` ou similar) — validado em `lib/han
 | 3 | fechado | People + Areas CRUD, sidebar role-gated |
 | 4 | fechado | Trust score por categoria + Agent API gating |
 | 5 | fechado | Maestro Chat (MiniMax + 20 tools + SSE) |
+| 6d | fechado | Briefing diário automático (cron + LLM no-tools + UI) |
 | **Actual** | em curso | Handoff protocol, feedback triage AI, screenshot native API, Gemini Vision |
 
 **Próximas candidatas:**
 - Sprint 6a: Decay automático do trust score por inactividade
 - Sprint 6b: Multi-agente UI (filtros no /maestro)
 - Sprint 6c: Editar/eliminar tarefas via chat (mais tools)
-- Sprint 6d: Briefing automático diário (cron + Maestro gera resumo)
 - Sprint 6e: Pesquisa semântica de conversas antigas
 
 ---

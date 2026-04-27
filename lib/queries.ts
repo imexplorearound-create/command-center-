@@ -576,6 +576,114 @@ export async function getRecentMaestroActions(
   }));
 }
 
+// ─── Briefings ──────────────────────────────────────────────
+
+export interface BriefingListItem {
+  id: string;
+  briefingDate: Date;
+  status: string;
+  channel: string | null;
+  generatedAt: Date;
+  deliveredAt: Date | null;
+  readAt: Date | null;
+  excerpt: string;
+  errorMessage: string | null;
+}
+
+export interface BriefingDetail extends BriefingListItem {
+  content: string;
+  locale: string;
+  llmModel: string | null;
+}
+
+function buildBriefingExcerpt(content: string): string {
+  const firstLine = content.split("\n").find((l) => l.trim().length > 0) ?? "";
+  return firstLine.replace(/^#+\s*/, "").slice(0, 160);
+}
+
+export async function getBriefingsForUser(
+  userId: string,
+  limit = 30,
+): Promise<BriefingListItem[]> {
+  const db = await getTenantDb();
+  const rows = await db.maestroBriefing.findMany({
+    where: { userId, status: { not: "skipped_empty" } },
+    orderBy: { briefingDate: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      briefingDate: true,
+      status: true,
+      channel: true,
+      generatedAt: true,
+      deliveredAt: true,
+      readAt: true,
+      content: true,
+      errorMessage: true,
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    briefingDate: r.briefingDate,
+    status: r.status,
+    channel: r.channel,
+    generatedAt: r.generatedAt,
+    deliveredAt: r.deliveredAt,
+    readAt: r.readAt,
+    excerpt: buildBriefingExcerpt(r.content),
+    errorMessage: r.errorMessage,
+  }));
+}
+
+export async function getBriefingById(
+  id: string,
+  userId: string,
+): Promise<BriefingDetail | null> {
+  const db = await getTenantDb();
+  const row = await db.maestroBriefing.findFirst({
+    where: { id, userId },
+    select: {
+      id: true,
+      briefingDate: true,
+      status: true,
+      channel: true,
+      generatedAt: true,
+      deliveredAt: true,
+      readAt: true,
+      content: true,
+      locale: true,
+      llmModel: true,
+      errorMessage: true,
+    },
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    briefingDate: row.briefingDate,
+    status: row.status,
+    channel: row.channel,
+    generatedAt: row.generatedAt,
+    deliveredAt: row.deliveredAt,
+    readAt: row.readAt,
+    excerpt: buildBriefingExcerpt(row.content),
+    content: row.content,
+    locale: row.locale,
+    llmModel: row.llmModel,
+    errorMessage: row.errorMessage,
+  };
+}
+
+export async function getUnreadBriefingCount(userId: string): Promise<number> {
+  const db = await getTenantDb();
+  return db.maestroBriefing.count({
+    where: {
+      userId,
+      readAt: null,
+      status: "delivered",
+    },
+  });
+}
+
 // ─── Content ────────────────────────────────────────────────
 
 export async function getContentItems(): Promise<ContentItemData[]> {

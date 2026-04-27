@@ -8,7 +8,8 @@ export type NotificationType =
   | "task_overdue"
   | "approval_request"
   | "timeentry_reminder"
-  | "campaign_sent";
+  | "campaign_sent"
+  | "maestro_briefing";
 
 export interface NotificationPayload {
   type: NotificationType;

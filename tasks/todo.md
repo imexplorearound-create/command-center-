@@ -780,3 +780,126 @@ O painel está dentro de um Provider React que vive no `app/(app)/layout.tsx`. E
 
 ### Próximo passo sugerido
 Testar manualmente os M-checks. Se algo falhar, abrir issue em `tasks/lessons.md`. Se tudo OK, correr `/simplify` para revisão de duplicação/qualidade antes de Sprint 6.
+
+---
+
+# Sprint 6d — Briefing Diário Automático do Maestro
+
+**Estado:** Código completo, pendente teste manual.
+**Data:** 2026-04-27
+**Pré-condição:** Sprint 5 verde.
+**Filosofia:** Maestro deixa de ser reactivo. Cron horário → endpoint Bearer → para cada user activo (admin/manager/membro) cuja hora preferida bate com a hora actual no fuso do tenant: recolhe dados (overdue, due-soon, validações, mudanças 24h, deltas trust), passa em JSON ao LLM **sem tools**, gera markdown PT-PT, persiste, notifica.
+
+## Decisões fechadas (executadas)
+1. Scheduler externo (systemd timer ou GitHub Actions) — endpoint é fonte de verdade.
+2. Auth: Bearer `BRIEFING_CRON_SECRET` (separado de `AGENT_API_SECRET`).
+3. Locale: PT-PT por defeito; estrutura preparada para EN.
+4. LLM sem tools, temperatura 0.3, max 800 tokens.
+5. Idempotência: UNIQUE `(userId, briefingDate)`.
+6. Quem recebe: admin, manager, membro com `briefing.enabled !== false`.
+7. Hora default 08:00 no fuso do tenant.
+8. Dados vazios → `status="skipped_empty"`, sem LLM, sem notify.
+9. Falha LLM → `status="failed"`, sem notify, com `errorMessage`.
+10. `/maestro/briefings` rota separada (writer-only).
+11. Badge "novo briefing" derivado de `readAt IS NULL`.
+
+## Executado pelo Claude
+
+### Schema
+- ✅ `MaestroBriefing` model + backrefs em `Tenant`/`User` + `maestro_briefing` em `NotificationType`
+- ✅ Migration `20260427134713_sprint6d_maestro_briefing` + `prisma db push` + `migrate resolve --applied`
+- ✅ Migration inclui também `feedback_items.test_case_code_raw` (estava drifted do sprint anterior)
+
+### Core (lib/maestro/briefing/)
+- ✅ `data-collector.ts` — overdue, due-soon (≤3d), pending validations, recent changes (24h), trust deltas. Role-aware (membro vê só os seus, admin vê tudo).
+- ✅ `prompt.ts` — system prompt PT-PT/EN, serializeBriefingData, buildBriefingUserMessage
+- ✅ `generator.ts` — chama `getLLMForTenant`, sem tools, devolve `{content, model, usage}`
+- ✅ `runner.ts` — orquestra collect+gen+persist+notify, idempotente, helpers `resolveBriefingChannel` e `toLocalDate`
+- ✅ `scheduler.ts` — `resolveBriefingTargets` itera tenants activos, filtra por role/active/opt-out + hora local
+
+### API
+- ✅ `lib/auth/briefing-cron.ts` — `authenticateBriefingCron` (Bearer)
+- ✅ `lib/validation/briefing-schema.ts` — Zod `briefingTriggerSchema`
+- ✅ `POST /api/maestro/briefing/generate` — endpoint principal
+- ✅ `GET /api/maestro/briefing/[id]` — fetch content para expand inline (writer-only)
+
+### Server actions
+- ✅ `lib/actions/briefing-actions.ts` — `markBriefingAsRead`, `triggerMyBriefing`
+
+### Queries
+- ✅ `getBriefingsForUser`, `getBriefingById`, `getUnreadBriefingCount` em `lib/queries.ts`
+
+### UI
+- ✅ Página `/maestro/briefings` — server component, `requireNonClient`, lista 30 últimos
+- ✅ `components/maestro/briefing-list.tsx` — client, expand on click, badge NOVO, marcar lido
+- ✅ `components/maestro/render-briefing-markdown.tsx` — render minimal (heading, bullet, bold)
+- ✅ `components/maestro/trigger-briefing-button.tsx` — "Gerar agora" (force=true)
+- ✅ `components/maestro/briefing-prefs-section.tsx` — toggle, hora, canal preferido
+- ✅ Integrado em `/settings/notifications` — `prefs` JSON inclui `briefing`
+- ✅ `top-nav-links.tsx` — entry "Briefings" com badge unread, escondido para cliente
+- ✅ `layout.tsx` passa `userRole` + `unreadBriefings` ao TopNav
+
+### Validation
+- ✅ `notification-prefs-schema.ts` ganha `briefingPrefsSchema` + `notificationTypeEnum` ganha `maestro_briefing`
+
+### Notifications
+- ✅ `lib/notifications/types.ts` — `NotificationType` ganha `"maestro_briefing"`. `notifyUser` já reusa as channels prefs do user (sem mudança).
+
+### Tests (vitest)
+- ✅ `data-collector.test.ts` — 10 testes (vazio, overdue, due-soon, role filtering, trust deltas)
+- ✅ `prompt.test.ts` — 6 testes (PT/EN, serialize estável, sem leak de IDs)
+- ✅ `runner.test.ts` — 11 testes (idempotência, force, empty, LLM fail, happy path, channel resolve)
+- ✅ `scheduler.test.ts` — 10 testes (filtros role, opt-out, hora local, force, default 8h)
+- ✅ `route.test.ts` — 8 testes (auth 401, 503 sem secret, 400 body inválido, agregação, propagação)
+- ✅ Total novo: **45 testes**. **493/493 verdes** (era 448 antes).
+
+### Build/types
+- ✅ `pnpm exec tsc --noEmit` clean
+- ✅ `pnpm vitest run` 493/493
+- ✅ `pnpm build` verde, rotas geradas (`/maestro/briefings`, `/api/maestro/briefing/generate`, `/api/maestro/briefing/[id]`)
+
+### Docs
+- ✅ `docs/briefing-cron-setup.md` — curl, systemd timer, GitHub Actions, troubleshooting
+
+## Verificação manual (Miguel)
+
+Pré-requisito: definir `BRIEFING_CRON_SECRET` em `.env.local`:
+```
+BRIEFING_CRON_SECRET=$(openssl rand -hex 32)
+```
+Restart dev server.
+
+- [ ] M1. Force-trigger via curl:
+  ```bash
+  curl -X POST -H "Authorization: Bearer $BRIEFING_CRON_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{"force":true,"userId":"<meu-user-uuid>"}' \
+    http://localhost:3100/api/maestro/briefing/generate
+  ```
+  Esperado: `{"processed":1,"delivered":1,...}`
+- [ ] M2. Email recebe "Briefing Maestro · 2026-04-27" com markdown
+- [ ] M3. Login miguel@ → top nav mostra "Briefings" com badge "1"
+- [ ] M4. Click → `/maestro/briefings` lista o briefing com badge "NOVO"
+- [ ] M5. Click no item → expande, vê markdown formatado
+- [ ] M6. "Marcar como lido" → badge desaparece, `readAt` populado
+- [ ] M7. Re-curl sem `force` → `{"skippedExisting":1}` (idempotente)
+- [ ] M8. Re-curl `force:true` → regera, novo `deliveredAt`
+- [ ] M9. `/settings/notifications` mostra bloco "Briefing diário" com toggle/hora/canal
+- [ ] M10. Mudar hora para 22, salvar → DB tem `notificationPrefs.briefing.hour=22`
+- [ ] M11. Curl sem userId/tenantId/force às 22:00 local → só dispara para hora=22
+- [ ] M12. Toggle off + curl → não gera
+- [ ] M13. Auth: curl sem Bearer → 401
+- [ ] M14. Login `sergio.goncalves@…` (cliente) → não vê "Briefings" no top nav; abrir `/maestro/briefings` → redirect
+- [ ] M15. Login `membro@example.com` → vê "Briefings"; só os seus
+- [ ] M16. User sem dados → `{"skippedEmpty":1}`; lista não mostra row para esse dia
+- [ ] M17. Botão "Gerar agora" na página → toast informa estado
+
+## Decisões deferidas (Sprint 6d.5+)
+- Retenção automática (delete >90 dias)
+- Per-user timezone (hoje usa tenant timezone)
+- Briefing semanal (segunda 9h, agregado da semana)
+- Sumário de OKRs no briefing
+- Action items clicáveis (botões para aprovar pending validations directamente do email)
+- Timestamp do "delivered" reflectido no email (hoje só na DB)
+- Falhas de canal individual (telegram down) deveriam marcar `failed_delivery` em vez de `delivered`
+
