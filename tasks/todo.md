@@ -952,3 +952,65 @@ Restart dev server.
 - **Bulk archive** — uma tool que arquive N tarefas de uma vez
 - **Tools de Workflow** (criar instância, listar pendentes) — mais alcance, fica para 6c.5
 
+---
+
+# Sprint 6a — Decay automático do trust score
+
+**Estado:** Código completo, pendente teste manual.
+**Data:** 2026-04-28
+**Pré-condição:** Sprints 6c/6d verdes.
+**Filosofia:** Trust score do Maestro deixa de ser monotonicamente crescente. Cron semanal (domingo 03:00 UTC) → endpoint Bearer → para cada `TrustScore` sem interacção há 7+ dias com `score > 0`: -1 ponto, audit log com `action="decay"`, `lastInteractionAt` preservado para o critério continuar a funcionar.
+
+Spec original: `docs/command-center-spec-v1.2.md` linha 309.
+
+## Decisões fechadas
+
+1. Scheduler externo (systemd timer ou GitHub Actions) — endpoint é fonte de verdade.
+2. Auth: Bearer `DECAY_CRON_SECRET` (separado de `BRIEFING_CRON_SECRET` e `AGENT_API_SECRET`).
+3. Cooldown default: 7 dias. Override via body `cooldownDays`.
+4. Delta: -1 por run. Floor: 0.
+5. **NÃO mexe em `lastInteractionAt`** — preserva o critério de selecção. Sem isto, decay correria 1x e nunca mais.
+6. **NÃO mexe em contadores** (`totalConfirmations`/`Edits`/`Rejections`) — esses são histórico humano.
+7. `MaestroAction` reusada com `action="decay"`, `entityType="trust_score"`, `entityId=trustScore.id`, `performedById=null` (acção sistémica).
+8. Sem migration: schema actual já comporta (`lastInteractionAt` existente, `action`/`entityType` são VARCHAR, `performedById` nullable).
+9. `dryRun:true` devolve candidatos sem persistir — para testes seguros.
+10. Race condition: score=0 entre select e write → `skippedZero++`.
+
+## Executado pelo Claude
+
+- ✅ `lib/maestro/trust-rules.ts` — `MAESTRO_ENTITY_TYPES` ganha `"trust_score"`; `DecayAction` type, `DECAY_DELTA`, `DECAY_COOLDOWN_DAYS` constantes
+- ✅ `lib/maestro/score-engine.ts` — `recordDecay({trustScoreId, tenantId, agentId, extractionType, scoreBefore}, tx)` paralelo a `recordValidation`
+- ✅ `lib/maestro/decay/runner.ts` (novo) — `runDecay({tenantId?, dryRun?, cooldownDays?, now?})` com bounded concurrency 6
+- ✅ `lib/auth/decay-cron.ts` (novo) — `authenticateDecayCron` Bearer
+- ✅ `app/api/maestro/decay/apply/route.ts` (novo) — POST com Zod validation
+- ✅ `lib/maestro/__tests__/decay-runner.test.ts` (novo) — 11 testes (filter, sem candidatos, normal run, score=1 edge, error capture, race condition, dryRun)
+- ✅ `docs/decay-cron-setup.md` (novo) — systemd timer (Sun 03:00 UTC) + GitHub Actions + curl + SQL diagnostic
+- ✅ tsc clean / vitest verde / build verde
+
+## Verificação manual (Miguel)
+
+Pré-requisito: definir `DECAY_CRON_SECRET` em `.env.local`:
+```
+DECAY_CRON_SECRET=$(openssl rand -hex 32)
+```
+Restart dev server (`systemctl --user restart command-center.service`).
+
+- [ ] M1. `curl -X POST http://localhost:3100/api/maestro/decay/apply` (sem Bearer) → 401
+- [ ] M2. `curl -X POST -H "Authorization: Bearer xxx" ...` (Bearer errado) → 401
+- [ ] M3. `curl -X POST -H "Authorization: Bearer $DECAY_CRON_SECRET" -H "Content-Type: application/json" -d '{"dryRun": true}' http://localhost:3100/api/maestro/decay/apply` → `{processed: N, candidates: [...]}` sem persistir
+- [ ] M4. Setup SQL: `UPDATE trust_scores SET last_interaction_at = now() - interval '10 days' WHERE id = '<id-real>'`
+- [ ] M5. `curl ... -d '{}'` (run real) → `decayed: M`. Confirmar SQL: `SELECT score FROM trust_scores WHERE id = '<id>'` diminuiu 1
+- [ ] M6. Audit: `SELECT * FROM maestro_actions WHERE action = 'decay' ORDER BY created_at DESC LIMIT 5` mostra entradas com `score_delta=-1`, `performed_by=NULL`, `entity_type='trust_score'`
+- [ ] M7. Floor: TrustScore com `score=1` antigo → decay → `score=0`. Próximo run não regista (filtro `score > 0`)
+- [ ] M8. Cooldown: `-d '{"cooldownDays": 30}'` → só decai os com >30 dias
+- [ ] M9. Tenant scope: `-d '{"tenantId": "<uuid>"}'` → só esse tenant
+- [ ] M10. Dashboard `/maestro` mostra scores actualizados após decay
+
+## Decisões deferidas (Sprint 6a.5+)
+
+- `lastDecayedAt` para idempotência hard (proteger contra cron 2x no mesmo dia)
+- Decay rate variável por threshold (ex: aprendizagem decai mais devagar)
+- UI dedicada de "histórico de decay" no dashboard `/maestro`
+- Métrica de "categorias mortas" (score 0 há N semanas) para alertar
+- Decay accelerado quando há rejections recentes (sinal de modelo desalinhado)
+

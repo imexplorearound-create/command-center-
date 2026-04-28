@@ -21,7 +21,7 @@ export const EXTRACTION_TYPES = [
 
 export type ExtractionType = (typeof EXTRACTION_TYPES)[number];
 
-export const MAESTRO_ENTITY_TYPES = ["task", "interaction", "content"] as const;
+export const MAESTRO_ENTITY_TYPES = ["task", "interaction", "content", "trust_score"] as const;
 export type MaestroEntityType = (typeof MAESTRO_ENTITY_TYPES)[number];
 
 /** Sentinel agentId para o Maestro interno (extracções automáticas a partir de syncs). */
@@ -166,3 +166,18 @@ export function applyDelta(action: ValidationAction): number {
 export function clampScore(score: number, delta: number): number {
   return Math.max(0, Math.min(100, score + delta));
 }
+
+// ─── Decay (Sprint 6a) ─────────────────────────────────────
+
+/**
+ * Acção sistémica que decresce o trust score quando uma categoria fica
+ * inactiva. Distinta de ValidationAction (que é human-driven). Cron semanal
+ * aplica um delta a categorias sem interacção há cooldown dias.
+ */
+export type DecayAction = "decay";
+
+/** Delta aplicado por cada execução de decay. */
+export const DECAY_DELTA = -1;
+
+/** Dias sem `lastInteractionAt` antes de uma categoria começar a decair. */
+export const DECAY_COOLDOWN_DAYS = 7;
