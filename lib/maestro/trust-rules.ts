@@ -175,6 +175,10 @@ export function clampScore(score: number, delta: number): number {
  * aplica um delta a categorias sem interacção há cooldown dias.
  */
 export type DecayAction = "decay";
+export const DECAY_ACTION: DecayAction = "decay";
+
+/** entityType para audit logs de decay. */
+export const DECAY_ENTITY_TYPE: MaestroEntityType = "trust_score";
 
 /** Delta aplicado por cada execução de decay. */
 export const DECAY_DELTA = -1;

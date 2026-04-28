@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { authenticateBriefingCron } from "@/lib/auth/briefing-cron";
+import { runWithConcurrency } from "@/lib/concurrency";
 import { briefingTriggerSchema } from "@/lib/validation/briefing-schema";
 import { resolveBriefingTargets } from "@/lib/maestro/briefing/scheduler";
 import { runBriefingForUser, BRIEFING_STATUS } from "@/lib/maestro/briefing/runner";
@@ -37,28 +38,20 @@ export async function POST(request: NextRequest) {
   let failed = 0;
   const errors: { userId: string; error: string }[] = [];
 
-  let cursor = 0;
   const data = parsed.data;
-  async function worker() {
-    while (cursor < targets.length) {
-      const target = targets[cursor++];
-      const result = await runBriefingForUser(target.tenant, target.user, {
-        force: data.force,
-        now,
-      });
-      if (result.status === BRIEFING_STATUS.DELIVERED) delivered += 1;
-      else if (result.status === BRIEFING_STATUS.SKIPPED_EMPTY) skippedEmpty += 1;
-      else if (result.status === BRIEFING_STATUS.SKIPPED_EXISTING) skippedExisting += 1;
-      else if (result.status === BRIEFING_STATUS.FAILED) {
-        failed += 1;
-        errors.push({ userId: target.user.id, error: result.error ?? "unknown" });
-      }
+  await runWithConcurrency(targets, RUN_CONCURRENCY, async (target) => {
+    const result = await runBriefingForUser(target.tenant, target.user, {
+      force: data.force,
+      now,
+    });
+    if (result.status === BRIEFING_STATUS.DELIVERED) delivered += 1;
+    else if (result.status === BRIEFING_STATUS.SKIPPED_EMPTY) skippedEmpty += 1;
+    else if (result.status === BRIEFING_STATUS.SKIPPED_EXISTING) skippedExisting += 1;
+    else if (result.status === BRIEFING_STATUS.FAILED) {
+      failed += 1;
+      errors.push({ userId: target.user.id, error: result.error ?? "unknown" });
     }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(RUN_CONCURRENCY, targets.length) }, worker),
-  );
+  });
 
   return NextResponse.json({
     processed: targets.length,

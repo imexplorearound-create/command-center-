@@ -1,7 +1,9 @@
 import "server-only";
 import { basePrisma, type Tx } from "@/lib/db";
+import { runWithConcurrency } from "@/lib/concurrency";
 import { recordDecay } from "@/lib/maestro/score-engine";
 import { DECAY_COOLDOWN_DAYS } from "@/lib/maestro/trust-rules";
+import type { DecayInput } from "@/lib/validation/decay-schema";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RUN_CONCURRENCY = 6;
@@ -15,13 +17,8 @@ export interface DecayCandidate {
   lastInteractionAt: Date | null;
 }
 
-export interface DecayRunInput {
-  tenantId?: string;
-  dryRun?: boolean;
-  cooldownDays?: number;
-  /** Override do "agora" — só para testes determinísticos. */
-  now?: Date;
-}
+/** Inputs do runner = inputs da API + override de `now` para testes. */
+export type DecayRunInput = DecayInput & { now?: Date };
 
 export interface DecayRunResult {
   processed: number;
@@ -85,40 +82,32 @@ export async function runDecay(input: DecayRunInput = {}): Promise<DecayRunResul
   let skippedZero = 0;
   const errors: { trustScoreId: string; error: string }[] = [];
 
-  let cursor = 0;
-  async function worker() {
-    while (cursor < candidates.length) {
-      const ts = candidates[cursor++];
-      try {
-        if (ts.score <= 0) {
-          skippedZero += 1;
-          continue;
-        }
-        await basePrisma.$transaction(async (tx: Tx) => {
-          await recordDecay(
-            {
-              trustScoreId: ts.id,
-              tenantId: ts.tenantId,
-              agentId: ts.agentId,
-              extractionType: ts.extractionType,
-              scoreBefore: ts.score,
-            },
-            tx,
-          );
-        });
-        decayed += 1;
-      } catch (err) {
-        errors.push({
-          trustScoreId: ts.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
+  await runWithConcurrency(candidates, RUN_CONCURRENCY, async (ts) => {
+    try {
+      if (ts.score <= 0) {
+        skippedZero += 1;
+        return;
       }
+      await basePrisma.$transaction(async (tx: Tx) => {
+        await recordDecay(
+          {
+            trustScoreId: ts.id,
+            tenantId: ts.tenantId,
+            agentId: ts.agentId,
+            extractionType: ts.extractionType,
+            scoreBefore: ts.score,
+          },
+          tx,
+        );
+      });
+      decayed += 1;
+    } catch (err) {
+      errors.push({
+        trustScoreId: ts.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(RUN_CONCURRENCY, candidates.length) }, worker),
-  );
+  });
 
   return { processed: candidates.length, decayed, skippedZero, errors };
 }

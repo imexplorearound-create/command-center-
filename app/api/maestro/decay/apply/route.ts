@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { z } from "zod";
 import { authenticateDecayCron } from "@/lib/auth/decay-cron";
+import { decayInputSchema } from "@/lib/validation/decay-schema";
 import { runDecay } from "@/lib/maestro/decay/runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const decayInputSchema = z.object({
-  tenantId: z.string().uuid().optional(),
-  dryRun: z.boolean().optional(),
-  cooldownDays: z.number().int().min(1).max(365).optional(),
-});
 
 export async function POST(request: NextRequest) {
   const auth = authenticateDecayCron(request);
