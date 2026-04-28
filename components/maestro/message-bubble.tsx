@@ -52,10 +52,12 @@ function renderText(text: string): React.ReactNode[] {
           continue;
         }
       }
-      // Plain char until next special
+      // Plain char until next special. Procurar a partir de i+1 garante
+      // que `next > i` mesmo quando i aponta para um ** ou ` que não fecha
+      // (caso contrário o loop trava em infinite + RangeError no React).
       let next = content.length;
-      const nextBold = content.indexOf("**", i);
-      const nextCode = content.indexOf("`", i);
+      const nextBold = content.indexOf("**", i + 1);
+      const nextCode = content.indexOf("`", i + 1);
       if (nextBold !== -1) next = Math.min(next, nextBold);
       if (nextCode !== -1) next = Math.min(next, nextCode);
       parts.push(content.slice(i, next));
