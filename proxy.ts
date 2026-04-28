@@ -5,7 +5,7 @@ import { getSecretKey } from "@/lib/auth/secret";
 
 const DEFAULT_TENANT_SLUG = "imexplorearound";
 
-const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/api/webhooks", "/api/sync", "/api/agent", "/api/feedback", "/api/handoff-asset", "/api/dev"];
+const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/api/webhooks", "/api/sync", "/api/agent", "/api/feedback", "/api/handoff-asset", "/api/dev", "/api/maestro/briefing/generate", "/api/maestro/decay/apply"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
