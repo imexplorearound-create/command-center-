@@ -986,6 +986,7 @@ Spec original: `docs/command-center-spec-v1.2.md` linha 309.
 - ✅ `lib/maestro/__tests__/decay-runner.test.ts` (novo) — 11 testes (filter, sem candidatos, normal run, score=1 edge, error capture, race condition, dryRun)
 - ✅ `docs/decay-cron-setup.md` (novo) — systemd timer (Sun 03:00 UTC) + GitHub Actions + curl + SQL diagnostic
 - ✅ tsc clean / vitest verde / build verde
+- ✅ **Cron agendado (2026-04-29):** systemd timer user-level `cc-decay.timer` em `/home/miguel/.config/systemd/user/`, secret em `~/.config/cc-decay.env` (chmod 600), próximo run domingo 03:00 UTC. Linger activo. Validado: 1ª invocação manual devolveu `{processed:1, decayed:1}`.
 
 ## Verificação manual (Miguel)
 
