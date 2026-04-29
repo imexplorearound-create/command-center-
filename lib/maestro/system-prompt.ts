@@ -72,12 +72,18 @@ const MODULE_PROMPTS: Record<string, Record<string, string>> = {
 export function buildSystemPrompt(
   locale: string,
   enabledModules: string[],
-  tools: MaestroToolDef[]
+  tools: MaestroToolDef[],
+  now: Date = new Date()
 ): string {
   const lang = locale === "en" ? "en" : "pt-PT";
+  const todayISO = now.toISOString().slice(0, 10);
 
   const parts: string[] = [
     IDENTITY[lang],
+    "",
+    lang === "pt-PT"
+      ? `# Data de hoje\nHoje é ${todayISO} (YYYY-MM-DD). Usa esta data quando o utilizador disser "hoje", "amanhã", "esta semana", etc.`
+      : `# Today's date\nToday is ${todayISO} (YYYY-MM-DD). Use this when the user says "today", "tomorrow", "this week", etc.`,
     "",
     lang === "pt-PT" ? "# Ferramentas disponíveis" : "# Available tools",
   ];

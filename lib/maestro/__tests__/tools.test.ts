@@ -93,6 +93,46 @@ describe("listar_tarefas", () => {
     const r = await listarTarefasTool.execute({ status: "invalido" }, ctx);
     expect(r.ok).toBe(false);
   });
+
+  it("aplica dueBefore + dueAfter (intervalo de prazo)", async () => {
+    mocks.task.findMany.mockResolvedValue([]);
+    await listarTarefasTool.execute(
+      { dueAfter: "2026-04-29", dueBefore: "2026-04-29" },
+      ctx,
+    );
+    const where = mocks.task.findMany.mock.calls[0][0].where;
+    expect(where.deadline).toEqual({
+      gte: new Date("2026-04-29"),
+      lte: new Date("2026-04-29"),
+    });
+  });
+
+  it("overdue:true → deadline < hoje E status != feito", async () => {
+    mocks.task.findMany.mockResolvedValue([]);
+    await listarTarefasTool.execute({ overdue: true }, ctx);
+    const where = mocks.task.findMany.mock.calls[0][0].where;
+    expect(where.deadline.lt).toBeInstanceOf(Date);
+    expect(where.status).toEqual({ not: "feito" });
+  });
+
+  it("overdue:true respeita status explícito do utilizador", async () => {
+    mocks.task.findMany.mockResolvedValue([]);
+    await listarTarefasTool.execute({ overdue: true, status: "em_curso" }, ctx);
+    const where = mocks.task.findMany.mock.calls[0][0].where;
+    expect(where.status).toBe("em_curso");
+  });
+
+  it("validationStatus filtra por_confirmar", async () => {
+    mocks.task.findMany.mockResolvedValue([]);
+    await listarTarefasTool.execute({ validationStatus: "por_confirmar" }, ctx);
+    const where = mocks.task.findMany.mock.calls[0][0].where;
+    expect(where.validationStatus).toBe("por_confirmar");
+  });
+
+  it("rejeita dueBefore mal formatado", async () => {
+    const r = await listarTarefasTool.execute({ dueBefore: "29/04/2026" }, ctx);
+    expect(r.ok).toBe(false);
+  });
 });
 
 describe("listar_pessoas", () => {
