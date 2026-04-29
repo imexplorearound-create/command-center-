@@ -133,6 +133,15 @@ describe("listar_tarefas", () => {
     const r = await listarTarefasTool.execute({ dueBefore: "29/04/2026" }, ctx);
     expect(r.ok).toBe(false);
   });
+
+  it("rejeita overdue + dueBefore (combinação ambígua)", async () => {
+    const r = await listarTarefasTool.execute(
+      { overdue: true, dueBefore: "2026-04-29" },
+      ctx,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/overdue/i);
+  });
 });
 
 describe("listar_pessoas", () => {

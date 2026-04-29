@@ -81,6 +81,13 @@ export const listarTarefasTool: MaestroToolDef = {
       return { ok: false, error: "Input inválido para listar_tarefas" };
     }
 
+    if (parsed.data.overdue && (parsed.data.dueBefore || parsed.data.dueAfter)) {
+      return {
+        ok: false,
+        error: "overdue não se combina com dueBefore/dueAfter — usa um ou outro",
+      };
+    }
+
     const where: Record<string, unknown> = {};
     if (parsed.data.onlyArchived) where.archivedAt = { not: null };
     else if (!parsed.data.includeArchived) where.archivedAt = null;
@@ -105,9 +112,8 @@ export const listarTarefasTool: MaestroToolDef = {
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       deadlineFilter.lt = today;
-      // overdue ⇒ não interessa quem é "feito"
       if (!parsed.data.status) {
-        where.status = { not: "feito" };
+        where.status = { not: taskStatusEnum.enum.feito };
       }
     }
 
