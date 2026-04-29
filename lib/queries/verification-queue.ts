@@ -1,5 +1,6 @@
 import { getTenantDb } from "@/lib/tenant";
 import type { AuthUser } from "@/lib/auth/dal";
+import { clienteProjectFilter } from "@/lib/auth/roles";
 
 export type VerificationQueueItem = {
   feedbackItemId: string;
@@ -28,15 +29,10 @@ const FLAG_REJECTIONS_THRESHOLD = 3;
 export async function getVerificationQueue(user: AuthUser): Promise<VerificationQueueItem[]> {
   const db = await getTenantDb();
 
-  const projectFilter =
-    user.role === "cliente"
-      ? { projectId: { in: user.projectIds } }
-      : {};
-
   const items = await db.feedbackItem.findMany({
     where: {
       approvalStatus: "ready_for_verification",
-      session: projectFilter,
+      session: clienteProjectFilter(user),
     },
     orderBy: { createdAt: "desc" },
     take: 200,

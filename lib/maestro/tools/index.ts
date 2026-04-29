@@ -12,6 +12,11 @@ import { mudarEstadoTarefaTool } from "./mudar-estado-tarefa";
 import { atribuirResponsavelTool } from "./atribuir-responsavel";
 import { comentarTarefaTool } from "./comentar-tarefa";
 import { concluirTarefaTool } from "./concluir-tarefa";
+import { arquivarTarefaTool } from "./arquivar-tarefa";
+import { restaurarTarefaTool } from "./restaurar-tarefa";
+import { listarDecisoesTool } from "./listar-decisoes";
+import { resolverDecisaoTool } from "./resolver-decisao";
+import { registarDecisaoTool } from "./registar-decisao";
 
 // CRM tools
 import { listarOportunidadesTool } from "./listar-oportunidades";
@@ -41,6 +46,11 @@ const CORE_TOOLS: MaestroToolDef[] = [
   atribuirResponsavelTool,
   comentarTarefaTool,
   concluirTarefaTool,
+  arquivarTarefaTool,
+  restaurarTarefaTool,
+  listarDecisoesTool,
+  resolverDecisaoTool,
+  registarDecisaoTool,
   // estadoInvestimentoTool: ficava gated por "cross-projects" (Addendum A4:
   // rota descontinuada). Passa a acessível globalmente; investimento agora
   // vive em /project/[slug]/financeiro.

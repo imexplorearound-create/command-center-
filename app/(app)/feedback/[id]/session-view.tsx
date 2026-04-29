@@ -11,6 +11,7 @@ import {
   convertFeedbackToTask,
   deleteFeedbackItem,
   sendItemToProducer,
+  updateFeedbackItemTestCaseCode,
   updateFeedbackItemTriage,
   updateSessionStatus,
 } from "@/lib/actions/feedback-actions";
@@ -81,6 +82,7 @@ interface ItemData {
   handoffResolvedAt: string | null;
   approvalStatus: ApprovalStatus;
   mentionedTestCaseCodes: string[];
+  testCaseCodeRaw: string | null;
   testCase: { id: string; code: string; title: string } | null;
 }
 
@@ -895,23 +897,7 @@ function FeedbackApprovalStrip({ item }: { item: ItemData }) {
         fontSize: "0.8rem",
       }}
     >
-      {item.testCase ? (
-        <span
-          style={{
-            fontFamily: "monospace",
-            background: "var(--card, #fff)",
-            border: "1px solid var(--border)",
-            padding: "2px 8px",
-            borderRadius: 4,
-            color: "var(--text)",
-          }}
-          title={item.testCase.title}
-        >
-          {item.testCase.code}
-        </span>
-      ) : (
-        <span style={{ color: "var(--yellow)" }}>Sem TestCase atribuído</span>
-      )}
+      <TestCaseCodeEditor item={item} />
 
       {item.mentionedTestCaseCodes.length > 0 && (
         <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
@@ -927,5 +913,151 @@ function FeedbackApprovalStrip({ item }: { item: ItemData }) {
         hasTestCase={!!item.testCase}
       />
     </div>
+  );
+}
+
+function TestCaseCodeEditor({ item }: { item: ItemData }) {
+  const router = useRouter();
+  const initialValue = item.testCaseCodeRaw ?? item.testCase?.code ?? "";
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(initialValue);
+  const [saving, setSaving] = useState(false);
+
+  const matched = !!item.testCase;
+  const hasRaw = !!item.testCaseCodeRaw;
+
+  async function save(next: string | null) {
+    setSaving(true);
+    const r = await updateFeedbackItemTestCaseCode(item.id, next);
+    setSaving(false);
+    if ("error" in r) {
+      toast.error(r.error);
+      return;
+    }
+    setEditing(false);
+    router.refresh();
+  }
+
+  function cancel() {
+    setEditing(false);
+    setValue(initialValue);
+  }
+
+  if (editing) {
+    return (
+      <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value.toUpperCase())}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save(value.trim() || null);
+            if (e.key === "Escape") cancel();
+          }}
+          placeholder="T-001"
+          disabled={saving}
+          style={{
+            fontFamily: "monospace",
+            padding: "2px 8px",
+            borderRadius: 4,
+            border: "1px solid var(--accent)",
+            background: "var(--card, #fff)",
+            color: "var(--text)",
+            fontSize: "0.8rem",
+            width: 90,
+          }}
+        />
+        <button
+          onClick={() => save(value.trim() || null)}
+          disabled={saving}
+          style={{
+            padding: "2px 8px",
+            borderRadius: 4,
+            border: "1px solid var(--green)",
+            background: "var(--green)",
+            color: "#fff",
+            fontSize: "0.75rem",
+            cursor: "pointer",
+          }}
+        >
+          ✓
+        </button>
+        <button
+          onClick={cancel}
+          disabled={saving}
+          style={{
+            padding: "2px 8px",
+            borderRadius: 4,
+            border: "1px solid var(--muted)",
+            background: "transparent",
+            color: "var(--muted)",
+            fontSize: "0.75rem",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
+      </span>
+    );
+  }
+
+  if (!matched && !hasRaw) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        style={{
+          padding: "2px 8px",
+          borderRadius: 4,
+          border: "1px dashed var(--muted)",
+          background: "transparent",
+          color: "var(--muted)",
+          fontSize: "0.78rem",
+          cursor: "pointer",
+        }}
+        title="Adicionar código de teste"
+      >
+        + código
+      </button>
+    );
+  }
+
+  if (!matched && hasRaw) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        title="Código não reconhecido neste projecto. Clica para editar."
+        style={{
+          fontFamily: "monospace",
+          padding: "2px 8px",
+          borderRadius: 4,
+          border: "1px solid #F9A825",
+          background: "rgba(249, 168, 37, 0.12)",
+          color: "#F9A825",
+          fontSize: "0.8rem",
+          cursor: "pointer",
+        }}
+      >
+        {item.testCaseCodeRaw} ⚠
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      title={item.testCase!.title + " (clica para editar código)"}
+      style={{
+        fontFamily: "monospace",
+        background: "var(--card, #fff)",
+        border: "1px solid var(--border)",
+        padding: "2px 8px",
+        borderRadius: 4,
+        color: "var(--text)",
+        fontSize: "0.8rem",
+        cursor: "pointer",
+      }}
+    >
+      {item.testCase!.code}
+    </button>
   );
 }

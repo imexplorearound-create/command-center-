@@ -12,6 +12,19 @@ export type DevApiKeyScope = (typeof AVAILABLE_SCOPES)[number];
 
 export const devApiKeyScopeEnum = z.enum(AVAILABLE_SCOPES);
 
+// Aceita tanto ISO com offset ("2026-05-01T12:00:00Z") como o formato do
+// <input type="datetime-local"> ("2026-05-01T12:00" sem TZ, interpretado
+// como local time). Converte tudo para Date para a server action.
+const optionalDateTime = z
+  .string()
+  .optional()
+  .nullable()
+  .transform((v) => {
+    if (!v) return null;
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  });
+
 export const createDevApiKeySchema = z.object({
   label: z.string().trim().min(2).max(100),
   personId: z.string().uuid().optional().nullable(),
@@ -19,7 +32,7 @@ export const createDevApiKeySchema = z.object({
     .array(devApiKeyScopeEnum)
     .min(1, "Escolhe pelo menos um scope")
     .max(AVAILABLE_SCOPES.length),
-  expiresAt: z.string().datetime({ offset: true }).optional().nullable(),
+  expiresAt: optionalDateTime,
 });
 
 export const revokeDevApiKeySchema = z.object({

@@ -16,7 +16,14 @@ export const notificationTypeEnum = z.enum([
   "feedback_bug",
   "feedback_suggestion",
   "campaign_sent",
+  "maestro_briefing",
 ]);
+
+export const briefingPrefsSchema = z.object({
+  enabled: z.boolean().default(true),
+  hour: z.number().int().min(0).max(23).default(8),
+  channel: notificationChannelEnum.optional(),
+});
 
 export const notificationPrefsSchema = z.object({
   channels: z.array(notificationChannelEnum).default(["email"]),
@@ -28,6 +35,7 @@ export const notificationPrefsSchema = z.object({
     notificationTypeEnum,
     z.array(notificationChannelEnum)
   ).optional(),
+  briefing: briefingPrefsSchema.optional(),
 });
 
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;

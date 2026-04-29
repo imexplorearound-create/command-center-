@@ -171,7 +171,12 @@ REGRA FUNDAMENTAL — PREENCHE OS CAMPOS SEMPRE QUE PUDERES INFERIR:
 - Para BUGS: expected/actual/steps/criteria são obrigatórios (infere-os).
 - Para SUGESTÕES: expected = o estado desejado que o tester descreveu; actual = o estado actual observado; steps = como chegar ao sítio onde se vê o problema; criteria = o que prova que a sugestão foi implementada. NÃO DEIXES VAZIOS.
 - Para PERGUNTAS: se o tester pergunta sobre comportamento, actual = comportamento observado, expected = null, steps = como reproduzir a situação. Criteria vazia.
-- Para ELOGIOS: tudo null/vazio.
+- Para ELOGIOS / RELATOS DE FLUXO POSITIVO ("fiz X e funcionou", "tudo correu normal"): trata como caso de teste de regressão.
+  · steps = como o tester reproduziu o fluxo (deriva da transcrição + eventos DOM)
+  · expected = comportamento esperado descrito ("entra na dashboard", "vê o ecrã principal")
+  · actual = mesmo que expected (o que aconteceu de facto, já que correu bem)
+  · criteria = critérios para futuro: o que deve continuar a funcionar
+  · NÃO DEIXES VAZIOS — o tester documentou um fluxo que precisa ficar coberto.
 
 Guias:
 - reproSteps: deriva dos eventos DOM em ordem cronológica. Linguagem natural ("Abre o calendário", "Clica em Adicionar Reserva"), não selectors CSS. 2-6 passos.

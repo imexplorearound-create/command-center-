@@ -780,3 +780,238 @@ O painel está dentro de um Provider React que vive no `app/(app)/layout.tsx`. E
 
 ### Próximo passo sugerido
 Testar manualmente os M-checks. Se algo falhar, abrir issue em `tasks/lessons.md`. Se tudo OK, correr `/simplify` para revisão de duplicação/qualidade antes de Sprint 6.
+
+---
+
+# Sprint 6d — Briefing Diário Automático do Maestro
+
+**Estado:** Código completo, pendente teste manual.
+**Data:** 2026-04-27
+**Pré-condição:** Sprint 5 verde.
+**Filosofia:** Maestro deixa de ser reactivo. Cron horário → endpoint Bearer → para cada user activo (admin/manager/membro) cuja hora preferida bate com a hora actual no fuso do tenant: recolhe dados (overdue, due-soon, validações, mudanças 24h, deltas trust), passa em JSON ao LLM **sem tools**, gera markdown PT-PT, persiste, notifica.
+
+## Decisões fechadas (executadas)
+1. Scheduler externo (systemd timer ou GitHub Actions) — endpoint é fonte de verdade.
+2. Auth: Bearer `BRIEFING_CRON_SECRET` (separado de `AGENT_API_SECRET`).
+3. Locale: PT-PT por defeito; estrutura preparada para EN.
+4. LLM sem tools, temperatura 0.3, max 800 tokens.
+5. Idempotência: UNIQUE `(userId, briefingDate)`.
+6. Quem recebe: admin, manager, membro com `briefing.enabled !== false`.
+7. Hora default 08:00 no fuso do tenant.
+8. Dados vazios → `status="skipped_empty"`, sem LLM, sem notify.
+9. Falha LLM → `status="failed"`, sem notify, com `errorMessage`.
+10. `/maestro/briefings` rota separada (writer-only).
+11. Badge "novo briefing" derivado de `readAt IS NULL`.
+
+## Executado pelo Claude
+
+### Schema
+- ✅ `MaestroBriefing` model + backrefs em `Tenant`/`User` + `maestro_briefing` em `NotificationType`
+- ✅ Migration `20260427134713_sprint6d_maestro_briefing` + `prisma db push` + `migrate resolve --applied`
+- ✅ Migration inclui também `feedback_items.test_case_code_raw` (estava drifted do sprint anterior)
+
+### Core (lib/maestro/briefing/)
+- ✅ `data-collector.ts` — overdue, due-soon (≤3d), pending validations, recent changes (24h), trust deltas. Role-aware (membro vê só os seus, admin vê tudo).
+- ✅ `prompt.ts` — system prompt PT-PT/EN, serializeBriefingData, buildBriefingUserMessage
+- ✅ `generator.ts` — chama `getLLMForTenant`, sem tools, devolve `{content, model, usage}`
+- ✅ `runner.ts` — orquestra collect+gen+persist+notify, idempotente, helpers `resolveBriefingChannel` e `toLocalDate`
+- ✅ `scheduler.ts` — `resolveBriefingTargets` itera tenants activos, filtra por role/active/opt-out + hora local
+
+### API
+- ✅ `lib/auth/briefing-cron.ts` — `authenticateBriefingCron` (Bearer)
+- ✅ `lib/validation/briefing-schema.ts` — Zod `briefingTriggerSchema`
+- ✅ `POST /api/maestro/briefing/generate` — endpoint principal
+- ✅ `GET /api/maestro/briefing/[id]` — fetch content para expand inline (writer-only)
+
+### Server actions
+- ✅ `lib/actions/briefing-actions.ts` — `markBriefingAsRead`, `triggerMyBriefing`
+
+### Queries
+- ✅ `getBriefingsForUser`, `getBriefingById`, `getUnreadBriefingCount` em `lib/queries.ts`
+
+### UI
+- ✅ Página `/maestro/briefings` — server component, `requireNonClient`, lista 30 últimos
+- ✅ `components/maestro/briefing-list.tsx` — client, expand on click, badge NOVO, marcar lido
+- ✅ `components/maestro/render-briefing-markdown.tsx` — render minimal (heading, bullet, bold)
+- ✅ `components/maestro/trigger-briefing-button.tsx` — "Gerar agora" (force=true)
+- ✅ `components/maestro/briefing-prefs-section.tsx` — toggle, hora, canal preferido
+- ✅ Integrado em `/settings/notifications` — `prefs` JSON inclui `briefing`
+- ✅ `top-nav-links.tsx` — entry "Briefings" com badge unread, escondido para cliente
+- ✅ `layout.tsx` passa `userRole` + `unreadBriefings` ao TopNav
+
+### Validation
+- ✅ `notification-prefs-schema.ts` ganha `briefingPrefsSchema` + `notificationTypeEnum` ganha `maestro_briefing`
+
+### Notifications
+- ✅ `lib/notifications/types.ts` — `NotificationType` ganha `"maestro_briefing"`. `notifyUser` já reusa as channels prefs do user (sem mudança).
+
+### Tests (vitest)
+- ✅ `data-collector.test.ts` — 10 testes (vazio, overdue, due-soon, role filtering, trust deltas)
+- ✅ `prompt.test.ts` — 6 testes (PT/EN, serialize estável, sem leak de IDs)
+- ✅ `runner.test.ts` — 11 testes (idempotência, force, empty, LLM fail, happy path, channel resolve)
+- ✅ `scheduler.test.ts` — 10 testes (filtros role, opt-out, hora local, force, default 8h)
+- ✅ `route.test.ts` — 8 testes (auth 401, 503 sem secret, 400 body inválido, agregação, propagação)
+- ✅ Total novo: **45 testes**. **493/493 verdes** (era 448 antes).
+
+### Build/types
+- ✅ `pnpm exec tsc --noEmit` clean
+- ✅ `pnpm vitest run` 493/493
+- ✅ `pnpm build` verde, rotas geradas (`/maestro/briefings`, `/api/maestro/briefing/generate`, `/api/maestro/briefing/[id]`)
+
+### Docs
+- ✅ `docs/briefing-cron-setup.md` — curl, systemd timer, GitHub Actions, troubleshooting
+
+## Verificação manual (Miguel)
+
+Pré-requisito: definir `BRIEFING_CRON_SECRET` em `.env.local`:
+```
+BRIEFING_CRON_SECRET=$(openssl rand -hex 32)
+```
+Restart dev server.
+
+- [ ] M1. Force-trigger via curl:
+  ```bash
+  curl -X POST -H "Authorization: Bearer $BRIEFING_CRON_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{"force":true,"userId":"<meu-user-uuid>"}' \
+    http://localhost:3100/api/maestro/briefing/generate
+  ```
+  Esperado: `{"processed":1,"delivered":1,...}`
+- [ ] M2. Email recebe "Briefing Maestro · 2026-04-27" com markdown
+- [ ] M3. Login miguel@ → top nav mostra "Briefings" com badge "1"
+- [ ] M4. Click → `/maestro/briefings` lista o briefing com badge "NOVO"
+- [ ] M5. Click no item → expande, vê markdown formatado
+- [ ] M6. "Marcar como lido" → badge desaparece, `readAt` populado
+- [ ] M7. Re-curl sem `force` → `{"skippedExisting":1}` (idempotente)
+- [ ] M8. Re-curl `force:true` → regera, novo `deliveredAt`
+- [ ] M9. `/settings/notifications` mostra bloco "Briefing diário" com toggle/hora/canal
+- [ ] M10. Mudar hora para 22, salvar → DB tem `notificationPrefs.briefing.hour=22`
+- [ ] M11. Curl sem userId/tenantId/force às 22:00 local → só dispara para hora=22
+- [ ] M12. Toggle off + curl → não gera
+- [ ] M13. Auth: curl sem Bearer → 401
+- [ ] M14. Login `sergio.goncalves@…` (cliente) → não vê "Briefings" no top nav; abrir `/maestro/briefings` → redirect
+- [ ] M15. Login `membro@example.com` → vê "Briefings"; só os seus
+- [ ] M16. User sem dados → `{"skippedEmpty":1}`; lista não mostra row para esse dia
+- [ ] M17. Botão "Gerar agora" na página → toast informa estado
+
+## Decisões deferidas (Sprint 6d.5+)
+- Retenção automática (delete >90 dias)
+- Per-user timezone (hoje usa tenant timezone)
+- Briefing semanal (segunda 9h, agregado da semana)
+- Sumário de OKRs no briefing
+- Action items clicáveis (botões para aprovar pending validations directamente do email)
+- Timestamp do "delivered" reflectido no email (hoje só na DB)
+- Falhas de canal individual (telegram down) deveriam marcar `failed_delivery` em vez de `delivered`
+
+---
+
+# Sprint 6c — Mais tools no chat (archive/restore + Decisions)
+
+**Estado:** Código completo, pendente teste manual via chat.
+**Data:** 2026-04-27
+**Pré-condição:** Sprint 6d verde.
+**Filosofia:** Maestro fecha o ciclo de gestão de tarefas (criar, mover, comentar, atribuir, concluir já existiam — falta arquivar/restaurar/ver-arquivadas) e passa a tocar em Decisions (item operacional do dashboard).
+
+## Decisões fechadas
+
+1. **Tools novas:** `arquivar_tarefa`, `restaurar_tarefa`, `listar_decisoes`, `resolver_decisao`, `registar_decisao`. Mais 1 extensão: `listar_tarefas` ganha `includeArchived` + `onlyArchived`.
+2. **`restaurar_tarefa` é admin-only** — consistente com `restoreTask` action. Verificado via `basePrisma.user.findUnique`. Pesquisa por título não funciona em arquivadas (UUID obrigatório) para evitar zona cinzenta.
+3. **`arquivar_tarefa` bloqueia se workflow activo** — mesma regra de `archiveTask` action. Verifica `workflowInstanceTasks` com `instance.status: "em_curso"`.
+4. **`resolver_decisao` marca `resolutionSource="human"` + `resolvedById = ctx.personId`** — alinha com `resolveDecision` action.
+5. **`registar_decisao`** reusa `decisionKindEnum` + `decisionSeverityEnum` do schema; `tenantId: ""` placeholder injectado pelo middleware tenantPrisma (mesmo padrão do action).
+6. **`listar_decisoes` esconde snoozed por defeito** — `OR: [{snoozedUntil: null}, {snoozedUntil: {lte: now}}]`. Flag `includeSnoozed:true` para ver todas.
+
+## Executado pelo Claude
+
+- ✅ `lib/maestro/tools/arquivar-tarefa.ts` — gating + bloqueio workflow + revalidate
+- ✅ `lib/maestro/tools/restaurar-tarefa.ts` — admin gate via `basePrisma.user.findUnique`
+- ✅ `lib/maestro/tools/listar-tarefas.ts` — flags `includeArchived` / `onlyArchived` + campo `arquivada` no output
+- ✅ `lib/maestro/tools/listar-decisoes.ts` — filtros kind/severity/projectSlug/includeSnoozed; ordena por priority desc
+- ✅ `lib/maestro/tools/resolver-decisao.ts` — bloqueia se já resolvida; usa `ctx.personId` para resolvedById
+- ✅ `lib/maestro/tools/registar-decisao.ts` — Zod com decisionKind/Severity enums; resolveProjectSlug opcional; valida ISO 8601 do dueAt
+- ✅ Registry em `lib/maestro/tools/index.ts` — 5 tools novas em CORE_TOOLS (system prompt rebuild automático via `buildSystemPrompt`)
+- ✅ Tests vitest: 10 novos em `lib/maestro/__tests__/tools.test.ts` (508 total = 498 antes + 10)
+- ✅ tsc clean / vitest 508/508 / build verde
+
+## Verificação manual (Miguel via chat Maestro)
+
+- [ ] M1. "Lista tarefas arquivadas no Aura PMS" → `listar_tarefas` com `onlyArchived:true`
+- [ ] M2. "Arquiva a tarefa T-001" → `arquivar_tarefa`; verifica que sai do kanban
+- [ ] M3. Tentar arquivar uma tarefa que está num workflow activo → erro com mensagem clara
+- [ ] M4. Login membro → "Restaura tarefa <uuid>" → "Sem permissão: restaurar tarefas é admin-only"
+- [ ] M5. Login admin → "Restaura tarefa <uuid>" → volta ao kanban
+- [ ] M6. "Que decisões abertas tenho?" → `listar_decisoes`
+- [ ] M7. "Filtra decisões com severity block" → param severity propagado
+- [ ] M8. "Regista decisão: cliente X parado há 5 dias, kind client_reply, severity warn, no projecto <slug>" → `registar_decisao` cria
+- [ ] M9. "Resolve a decisão <uuid> com nota 'cliente respondeu'" → `resolver_decisao`; aparece em Resolvidas 24h
+- [ ] M10. Tentar resolver decisão já resolvida → erro
+
+## Decisões deferidas
+- **Snooze decisão via chat** — adicionar `snoozar_decisao` quando user pedir
+- **Reabrir decisão via chat** — `reabrir_decisao`; precisa lógica de cadeia `reopenedById`
+- **Bulk archive** — uma tool que arquive N tarefas de uma vez
+- **Tools de Workflow** (criar instância, listar pendentes) — mais alcance, fica para 6c.5
+
+---
+
+# Sprint 6a — Decay automático do trust score
+
+**Estado:** Código completo, pendente teste manual.
+**Data:** 2026-04-28
+**Pré-condição:** Sprints 6c/6d verdes.
+**Filosofia:** Trust score do Maestro deixa de ser monotonicamente crescente. Cron semanal (domingo 03:00 UTC) → endpoint Bearer → para cada `TrustScore` sem interacção há 7+ dias com `score > 0`: -1 ponto, audit log com `action="decay"`, `lastInteractionAt` preservado para o critério continuar a funcionar.
+
+Spec original: `docs/command-center-spec-v1.2.md` linha 309.
+
+## Decisões fechadas
+
+1. Scheduler externo (systemd timer ou GitHub Actions) — endpoint é fonte de verdade.
+2. Auth: Bearer `DECAY_CRON_SECRET` (separado de `BRIEFING_CRON_SECRET` e `AGENT_API_SECRET`).
+3. Cooldown default: 7 dias. Override via body `cooldownDays`.
+4. Delta: -1 por run. Floor: 0.
+5. **NÃO mexe em `lastInteractionAt`** — preserva o critério de selecção. Sem isto, decay correria 1x e nunca mais.
+6. **NÃO mexe em contadores** (`totalConfirmations`/`Edits`/`Rejections`) — esses são histórico humano.
+7. `MaestroAction` reusada com `action="decay"`, `entityType="trust_score"`, `entityId=trustScore.id`, `performedById=null` (acção sistémica).
+8. Sem migration: schema actual já comporta (`lastInteractionAt` existente, `action`/`entityType` são VARCHAR, `performedById` nullable).
+9. `dryRun:true` devolve candidatos sem persistir — para testes seguros.
+10. Race condition: score=0 entre select e write → `skippedZero++`.
+
+## Executado pelo Claude
+
+- ✅ `lib/maestro/trust-rules.ts` — `MAESTRO_ENTITY_TYPES` ganha `"trust_score"`; `DecayAction` type, `DECAY_DELTA`, `DECAY_COOLDOWN_DAYS` constantes
+- ✅ `lib/maestro/score-engine.ts` — `recordDecay({trustScoreId, tenantId, agentId, extractionType, scoreBefore}, tx)` paralelo a `recordValidation`
+- ✅ `lib/maestro/decay/runner.ts` (novo) — `runDecay({tenantId?, dryRun?, cooldownDays?, now?})` com bounded concurrency 6
+- ✅ `lib/auth/decay-cron.ts` (novo) — `authenticateDecayCron` Bearer
+- ✅ `app/api/maestro/decay/apply/route.ts` (novo) — POST com Zod validation
+- ✅ `lib/maestro/__tests__/decay-runner.test.ts` (novo) — 11 testes (filter, sem candidatos, normal run, score=1 edge, error capture, race condition, dryRun)
+- ✅ `docs/decay-cron-setup.md` (novo) — systemd timer (Sun 03:00 UTC) + GitHub Actions + curl + SQL diagnostic
+- ✅ tsc clean / vitest verde / build verde
+- ✅ **Cron agendado (2026-04-29):** systemd timer user-level `cc-decay.timer` em `/home/miguel/.config/systemd/user/`, secret em `~/.config/cc-decay.env` (chmod 600), próximo run domingo 03:00 UTC. Linger activo. Validado: 1ª invocação manual devolveu `{processed:1, decayed:1}`.
+
+## Verificação manual (Miguel)
+
+Pré-requisito: definir `DECAY_CRON_SECRET` em `.env.local`:
+```
+DECAY_CRON_SECRET=$(openssl rand -hex 32)
+```
+Restart dev server (`systemctl --user restart command-center.service`).
+
+- [ ] M1. `curl -X POST http://localhost:3100/api/maestro/decay/apply` (sem Bearer) → 401
+- [ ] M2. `curl -X POST -H "Authorization: Bearer xxx" ...` (Bearer errado) → 401
+- [ ] M3. `curl -X POST -H "Authorization: Bearer $DECAY_CRON_SECRET" -H "Content-Type: application/json" -d '{"dryRun": true}' http://localhost:3100/api/maestro/decay/apply` → `{processed: N, candidates: [...]}` sem persistir
+- [ ] M4. Setup SQL: `UPDATE trust_scores SET last_interaction_at = now() - interval '10 days' WHERE id = '<id-real>'`
+- [ ] M5. `curl ... -d '{}'` (run real) → `decayed: M`. Confirmar SQL: `SELECT score FROM trust_scores WHERE id = '<id>'` diminuiu 1
+- [ ] M6. Audit: `SELECT * FROM maestro_actions WHERE action = 'decay' ORDER BY created_at DESC LIMIT 5` mostra entradas com `score_delta=-1`, `performed_by=NULL`, `entity_type='trust_score'`
+- [ ] M7. Floor: TrustScore com `score=1` antigo → decay → `score=0`. Próximo run não regista (filtro `score > 0`)
+- [ ] M8. Cooldown: `-d '{"cooldownDays": 30}'` → só decai os com >30 dias
+- [ ] M9. Tenant scope: `-d '{"tenantId": "<uuid>"}'` → só esse tenant
+- [ ] M10. Dashboard `/maestro` mostra scores actualizados após decay
+
+## Decisões deferidas (Sprint 6a.5+)
+
+- `lastDecayedAt` para idempotência hard (proteger contra cron 2x no mesmo dia)
+- Decay rate variável por threshold (ex: aprendizagem decai mais devagar)
+- UI dedicada de "histórico de decay" no dashboard `/maestro`
+- Métrica de "categorias mortas" (score 0 há N semanas) para alertar
+- Decay accelerado quando há rejections recentes (sinal de modelo desalinhado)
+

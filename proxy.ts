@@ -5,14 +5,15 @@ import { getSecretKey } from "@/lib/auth/secret";
 
 const DEFAULT_TENANT_SLUG = "imexplorearound";
 
-const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/api/webhooks", "/api/sync", "/api/agent", "/api/feedback", "/api/handoff-asset"];
+const PUBLIC_PATHS = ["/login", "/_next", "/favicon.ico", "/api/webhooks", "/api/sync", "/api/agent", "/api/feedback", "/api/handoff-asset", "/api/dev", "/api/maestro/briefing/generate", "/api/maestro/decay/apply"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Resolve tenant slug from subdomain
   const host = request.headers.get("host") ?? "";
-  const subdomain = host.split(".")[0];
+  const hostNoPort = host.split(":")[0];
+  const subdomain = hostNoPort.split(".")[0];
   // Dev/IP access: default tenant. Production: subdomain-based.
   const isIpOrLocal = subdomain === "localhost"
     || subdomain.startsWith("127")

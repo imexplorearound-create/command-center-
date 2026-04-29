@@ -96,24 +96,48 @@ export async function callGeminiDraft(input: GeminiDraftInput): Promise<Feedback
     ],
   };
 
-  let res: Response;
-  try {
-    res = await fetch(`${GEMINI_BASE_URL}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    console.error("[gemini-vision] network error:", err instanceof Error ? err.message : err);
-    return null;
+  const MAX_ATTEMPTS = 3;
+  const BACKOFF_MS = [1000, 3000];
+  let res: Response | null = null;
+  let lastError = "";
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      res = await fetch(`${GEMINI_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      console.warn(`[gemini-vision] network error (tentativa ${attempt + 1}/${MAX_ATTEMPTS}): ${lastError}`);
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+        continue;
+      }
+      console.error("[gemini-vision] network error final:", lastError);
+      return null;
+    }
+
+    // Retry só em 429 (rate limit) e 5xx (server overload/errors)
+    if (res.status === 429 || res.status >= 500) {
+      const errText = await res.text().catch(() => "");
+      lastError = `HTTP ${res.status}: ${errText.slice(0, 200)}`;
+      console.warn(`[gemini-vision] retryable (tentativa ${attempt + 1}/${MAX_ATTEMPTS}): ${lastError}`);
+      if (attempt < MAX_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+        continue;
+      }
+    }
+    break;
   }
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    console.error(`[gemini-vision] HTTP ${res.status}: ${errText.slice(0, 300)}`);
+  if (!res || !res.ok) {
+    const errText = res ? await res.text().catch(() => "") : lastError;
+    console.error(`[gemini-vision] HTTP ${res?.status ?? "—"}: ${errText.slice(0, 300)}`);
     return null;
   }
 

@@ -1,5 +1,7 @@
 import { EmailChannel } from "./channels/email";
-import type { NotificationPayload } from "./types";
+import { DiscordChannel } from "./channels/discord";
+import { TelegramChannel } from "./channels/telegram";
+import type { NotificationChannel, NotificationPayload } from "./types";
 
 /**
  * Parses comma-separated recipient list from env. Primary env wins; if vazia,
@@ -36,4 +38,36 @@ export async function sendEmailToAll(
   await Promise.allSettled(
     recipients.map((to) => channel.send({ ...payload, recipientEmail: to })),
   );
+}
+
+/**
+ * Fan-out para canais "broadcast" configurados (Discord webhook, Telegram
+ * chat IDs). Não envia email — esse tem recipients por env dedicada, fluxo
+ * diferente. Disparar lado-a-lado com sendEmailToAll nos notifiers.
+ */
+export async function sendToBroadcastChannels(
+  payload: NotificationPayload,
+): Promise<void> {
+  const channels: NotificationChannel[] = [new DiscordChannel(), new TelegramChannel()];
+  await Promise.allSettled(
+    channels.filter((c) => c.enabled).map((c) => c.send(payload)),
+  );
+}
+
+/**
+ * Notifier one-liner: dispara email (se há recipients + SMTP enabled) E
+ * broadcast (Discord/Telegram) em paralelo. `primaryEnv` é a env-var
+ * principal (ex. `BRUNO_NOTIFY_TO`); `fallbackEnv` fica para o default.
+ */
+export async function fanOutNotification(
+  payload: NotificationPayload,
+  envs: { primary: string; fallback?: string },
+): Promise<void> {
+  const recipients = resolveEmailRecipients(envs.primary, envs.fallback);
+  const emailChannel = getEmailChannelIfEnabled();
+  const jobs: Promise<unknown>[] = [sendToBroadcastChannels(payload)];
+  if (recipients.length > 0 && emailChannel) {
+    jobs.push(sendEmailToAll(emailChannel, recipients, payload));
+  }
+  await Promise.allSettled(jobs);
 }

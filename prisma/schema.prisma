@@ -40,6 +40,7 @@ model Tenant {
   maestroActions       MaestroAction[]
   maestroConversations MaestroConversation[]
   maestroMessages      MaestroMessage[]
+  maestroBriefings     MaestroBriefing[]
   syncLogs             SyncLog[]
   workflowTemplates    WorkflowTemplate[]
   workflowSteps        WorkflowTemplateStep[]
@@ -162,6 +163,7 @@ model User {
   person             Person              @relation(fields: [personId], references: [id])
   projectAssignments UserProjectAccess[]
   moduleAccess       UserModuleAccess[]
+  maestroBriefings   MaestroBriefing[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -771,6 +773,35 @@ model MaestroMessage {
   @@map("maestro_messages")
 }
 
+model MaestroBriefing {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  briefingDate   DateTime  @map("briefing_date") @db.Date
+  generatedAt    DateTime  @default(now()) @map("generated_at") @db.Timestamptz
+  locale         String    @default("pt-PT") @db.VarChar(10)
+  content        String    @db.Text
+  dataSnapshot   Json      @map("data_snapshot")
+  status         String    @default("pending") @db.VarChar(20)
+  channel        String?   @db.VarChar(20)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz
+  readAt         DateTime? @map("read_at") @db.Timestamptz
+  errorMessage   String?   @map("error_message") @db.Text
+  llmModel       String?   @map("llm_model") @db.VarChar(200)
+  llmUsageInput  Int?      @map("llm_usage_input")
+  llmUsageOutput Int?      @map("llm_usage_output")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, briefingDate], map: "maestro_briefings_user_date_unique")
+  @@index([tenantId])
+  @@index([userId, briefingDate(sort: Desc)], map: "idx_briefings_user_date")
+  @@index([status, generatedAt], map: "idx_briefings_status")
+  @@map("maestro_briefings")
+}
+
 // ─── Sync Log ───────────────────────────────────────────────
 
 model SyncLog {
@@ -1102,6 +1133,10 @@ model FeedbackItem {
   // `approvalStatus` modela o ciclo do feedback (tester↔dev), não o kanban
   // da Task. Ver docs/feedback-loop.md para transições válidas.
   testCaseId            String?   @map("test_case_id") @db.Uuid
+  // String crua que o tester escreveu no plugin (ex.: "T-003"). Persiste mesmo
+  // quando não há TestCase com esse código no projecto — a triagem vê o que
+  // foi tipado e pode corrigir typos sem perder informação.
+  testCaseCodeRaw       String?   @map("test_case_code_raw") @db.VarChar(50)
   // Códigos T-NNN mencionados na transcrição mas não resolvidos para `testCaseId`
   // (ex.: N matches ambíguos, ou extras além do dropdown). Para a triagem
   // ver e decidir. Separado de `contextSnapshot` para preservar a shape

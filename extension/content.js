@@ -14,7 +14,6 @@
   var pagesVisited = [window.location.href];
   var selectedTestCaseCode = null;
   var isOpeningPicker = false;
-  var TEST_CASES_TTL_MS = 24 * 60 * 60 * 1000;
 
   var recordingStartTime = 0;
   var recordedEvents = [];
@@ -243,37 +242,10 @@
     return "";
   }
 
-  function fetchTestCases(settings, projectSlug) {
-    var cache = (settings.testCasesByProject || {})[projectSlug];
-    if (cache && Date.now() - cache.fetchedAt < TEST_CASES_TTL_MS) {
-      return Promise.resolve(cache.cases);
-    }
-    if (!settings.feedbackToken || !settings.serverUrl || !projectSlug) {
-      return Promise.resolve([]);
-    }
-    var url = settings.serverUrl +
-      "/api/feedback/test-cases?projectSlug=" + encodeURIComponent(projectSlug);
-    return fetch(url, {
-      headers: { Authorization: "Bearer " + settings.feedbackToken },
-    }).then(function (res) {
-      if (!res.ok) {
-        console.warn("[CC Feedback] fetch test-cases failed:", res.status);
-        return [];
-      }
-      return res.json().then(function (body) {
-        var cases = Array.isArray(body.testCases) ? body.testCases : [];
-        var updated = Object.assign({}, settings.testCasesByProject || {});
-        updated[projectSlug] = { cases: cases, fetchedAt: Date.now() };
-        return window.ccStorage.set({ testCasesByProject: updated })
-          .then(function () { return cases; });
-      });
-    }).catch(function (err) {
-      console.warn("[CC Feedback] fetch test-cases error:", err && err.message);
-      return [];
-    });
-  }
-
-  function showTestCasePicker(cases) {
+  // Modal mínimo: tester escreve o código que tem na sua sheet/doc externo.
+  // Sem fetch, sem cache, sem validação client — server aceita sempre e a
+  // triagem no Command Center marca a laranja se não bater num TestCase real.
+  function showTestCodeInput() {
     return new Promise(function (resolve) {
       var backdrop = document.createElement("div");
       backdrop.className = "cc-feedback-picker-backdrop";
@@ -282,68 +254,41 @@
 
       var title = document.createElement("div");
       title.className = "cc-feedback-picker-title";
-      title.textContent = "Escolhe o teste";
+      title.textContent = "Código do teste";
       panel.appendChild(title);
 
       var sub = document.createElement("div");
       sub.className = "cc-feedback-picker-sub";
-      sub.textContent = cases.length
-        ? "Clica num caso para começar a gravar, ou 'Sem caso' para uma nota genérica."
-        : "Não há casos activos neste projecto. Vais gravar sem código de teste.";
+      sub.textContent = "Escreve o código que tens na tua sheet (ex: T-003), ou 'Sem caso' para gravar sem código.";
       panel.appendChild(sub);
 
-      if (cases.length) {
-        var search = document.createElement("input");
-        search.type = "text";
-        search.className = "cc-feedback-picker-search";
-        search.placeholder = "Filtrar por código ou título…";
-        panel.appendChild(search);
-
-        var list = document.createElement("div");
-        list.className = "cc-feedback-picker-list";
-        panel.appendChild(list);
-
-        function render(filter) {
-          list.innerHTML = "";
-          var q = (filter || "").trim().toLowerCase();
-          var visible = q
-            ? cases.filter(function (c) {
-                return (c.code + " " + (c.title || "")).toLowerCase().indexOf(q) !== -1;
-              })
-            : cases;
-          if (visible.length === 0) {
-            var empty = document.createElement("div");
-            empty.className = "cc-feedback-picker-empty";
-            empty.textContent = "Sem correspondências.";
-            list.appendChild(empty);
-            return;
-          }
-          visible.slice(0, 50).forEach(function (c) {
-            var row = document.createElement("button");
-            row.type = "button";
-            row.className = "cc-feedback-picker-row";
-            var code = document.createElement("span");
-            code.className = "cc-feedback-picker-code";
-            code.textContent = c.code;
-            var titleEl = document.createElement("span");
-            titleEl.className = "cc-feedback-picker-row-title";
-            titleEl.textContent = c.title;
-            row.appendChild(code);
-            row.appendChild(titleEl);
-            row.addEventListener("click", function () {
-              close({ code: c.code });
-            });
-            list.appendChild(row);
-          });
-        }
-
-        search.addEventListener("input", function () { render(search.value); });
-        render("");
-        setTimeout(function () { search.focus(); }, 0);
-      }
+      var input = document.createElement("input");
+      input.type = "text";
+      input.className = "cc-feedback-picker-search";
+      input.placeholder = "T-003";
+      input.autocomplete = "off";
+      // Auto-uppercase para coincidir com o formato no DB sem o tester pensar nisso.
+      input.addEventListener("input", function () {
+        var pos = input.selectionStart;
+        input.value = input.value.toUpperCase();
+        if (pos !== null) input.setSelectionRange(pos, pos);
+      });
+      panel.appendChild(input);
 
       var actions = document.createElement("div");
       actions.className = "cc-feedback-picker-actions";
+
+      var startBtn = document.createElement("button");
+      startBtn.type = "button";
+      startBtn.className = "cc-feedback-picker-row";
+      startBtn.style.flex = "1";
+      startBtn.style.justifyContent = "center";
+      startBtn.style.fontWeight = "600";
+      startBtn.textContent = "Iniciar gravação";
+      startBtn.addEventListener("click", function () {
+        close({ code: input.value.trim() || null });
+      });
+      actions.appendChild(startBtn);
 
       var skipBtn = document.createElement("button");
       skipBtn.type = "button";
@@ -361,8 +306,17 @@
 
       panel.appendChild(actions);
 
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          close({ code: input.value.trim() || null });
+        }
+      });
+
       backdrop.appendChild(panel);
       document.body.appendChild(backdrop);
+
+      setTimeout(function () { input.focus(); }, 0);
 
       function close(choice) {
         document.removeEventListener("keydown", onEsc, true);
@@ -476,10 +430,7 @@
         showToast("Este site não está na tua lista de workspaces.", true);
         return;
       }
-      var projectSlug = resolveProjectSlug(settings.workspaces || []);
-      return fetchTestCases(settings, projectSlug).then(function (cases) {
-        return showTestCasePicker(cases);
-      }).then(function (choice) {
+      return showTestCodeInput().then(function (choice) {
         if (choice === null) return;
         selectedTestCaseCode = choice.code || null;
         drainQueue();

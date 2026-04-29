@@ -7,6 +7,9 @@ import { getTenantDb, getTenantId } from "@/lib/tenant";
 import {
   applyDelta,
   clampScore,
+  DECAY_ACTION,
+  DECAY_DELTA,
+  DECAY_ENTITY_TYPE,
   MAESTRO_INTERNAL,
   type ValidationAction,
   type ExtractionType,
@@ -110,4 +113,62 @@ async function recordValidationInTx(
   });
 
   return { scoreBefore, scoreAfter, delta };
+}
+
+// ─── Decay (Sprint 6a) ─────────────────────────────────────
+
+interface RecordDecayInput {
+  trustScoreId: string;
+  tenantId: string;
+  agentId: string;
+  extractionType: string;
+  scoreBefore: number;
+}
+
+export interface RecordDecayResult {
+  scoreBefore: number;
+  scoreAfter: number;
+  delta: number;
+}
+
+/**
+ * Aplica decay (-1) ao trust score:
+ *  1. Update TrustScore.score (clamp 0). **Não** mexe em lastInteractionAt
+ *     nem nos contadores — preserva o critério "última interacção humana".
+ *  2. Cria MaestroAction { action: "decay", entityType: "trust_score",
+ *     entityId: trustScoreId, performedById: null } como audit sistémico.
+ *
+ * Operação atómica via tx (obrigatório). Caller (runner) é responsável pelo
+ * critério de selecção (lastInteractionAt + cooldown + score > 0).
+ *
+ * Usa o cliente raw (basePrisma.Tx), não o tenantPrisma extended, porque
+ * corre fora de session (cron) e processa múltiplos tenants.
+ */
+export async function recordDecay(
+  input: RecordDecayInput,
+  tx: Tx,
+): Promise<RecordDecayResult> {
+  const scoreAfter = clampScore(input.scoreBefore, DECAY_DELTA);
+
+  await tx.trustScore.update({
+    where: { id: input.trustScoreId },
+    data: { score: scoreAfter },
+  });
+
+  await tx.maestroAction.create({
+    data: {
+      tenantId: input.tenantId,
+      agentId: input.agentId,
+      extractionType: input.extractionType,
+      action: DECAY_ACTION,
+      entityType: DECAY_ENTITY_TYPE,
+      entityId: input.trustScoreId,
+      scoreDelta: DECAY_DELTA,
+      scoreBefore: input.scoreBefore,
+      scoreAfter,
+      performedById: null,
+    },
+  });
+
+  return { scoreBefore: input.scoreBefore, scoreAfter, delta: DECAY_DELTA };
 }

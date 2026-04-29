@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getTenantDb } from "@/lib/tenant";
-import { requireNonClient } from "@/lib/auth/dal";
+import { getAuthUser } from "@/lib/auth/dal";
+import { clienteProjectFilter } from "@/lib/auth/roles";
 import { getServerT } from "@/lib/i18n/server";
 import { formatDateShort } from "@/lib/utils";
 import type { FeedbackSessionStatus } from "@/lib/types";
@@ -17,14 +19,18 @@ export default async function FeedbackPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireNonClient();
+  const user = await getAuthUser();
+  if (!user) redirect("/login");
   const t = await getServerT();
   const db = await getTenantDb();
   const { archived } = await searchParams;
   const showArchived = archived === "1";
 
   const sessions = await db.feedbackSession.findMany({
-    where: showArchived ? { archivedAt: { not: null } } : { archivedAt: null },
+    where: {
+      ...(showArchived ? { archivedAt: { not: null } } : { archivedAt: null }),
+      ...clienteProjectFilter(user),
+    },
     include: { project: { select: { id: true, name: true, slug: true, color: true } } },
     orderBy: { createdAt: "desc" },
     take: 200,

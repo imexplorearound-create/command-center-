@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3100",
+    "prebuild": "bash scripts/package-extension.sh",
     "build": "next build",
     "start": "next start -p 3100",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package:extension": "bash scripts/package-extension.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, FileText } from "lucide-react";
 import { getAuthUser } from "@/lib/auth/dal";
+import { canReadProject } from "@/lib/auth/roles";
 import { getTenantDb } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +21,7 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
   });
   if (!project) notFound();
 
-  if (user.role === "cliente" && !user.projectIds.includes(project.id)) {
-    redirect("/");
-  }
+  if (!canReadProject(user, project.id)) redirect("/");
 
   const sheets = await db.testSheet.findMany({
     where: { projectId: project.id, archivedAt: null },
@@ -45,7 +44,7 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
           alignItems: "center",
           gap: 4,
           fontSize: 13,
-          color: "#666",
+          color: "var(--muted)",
           textDecoration: "none",
           marginBottom: 16,
         }}
@@ -53,17 +52,17 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
         <ChevronLeft size={14} /> {project.name}
       </Link>
 
-      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4 }}>
+      <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 4, color: "var(--text)" }}>
         <FileText size={20} style={{ verticalAlign: "middle", marginRight: 8 }} />
         Folhas de testes
       </h1>
-      <p style={{ fontSize: 13, color: "#666", marginBottom: 24 }}>
-        Criadas pelo developer via API. Usa o código do teste (ex. <code>T-001</code>)
+      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 24 }}>
+        Criadas pelo developer via API. Usa o código do teste (ex. <code style={{ background: "var(--bg-subtle)", color: "var(--text)", padding: "1px 4px", borderRadius: 3 }}>T-001</code>)
         quando fizeres feedback para ligar a nota ao caso correcto.
       </p>
 
       {sheets.length === 0 ? (
-        <p style={{ color: "#888", fontSize: 14 }}>
+        <p style={{ color: "var(--muted)", fontSize: 14 }}>
           Ainda não há folhas de testes para este projecto.
         </p>
       ) : (
@@ -75,18 +74,18 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
               style={{ padding: 20 }}
             >
               <header style={{ marginBottom: 12 }}>
-                <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text)" }}>
                   {sheet.title}
                 </h2>
                 {sheet.description && (
-                  <p style={{ fontSize: 13, color: "#666", margin: "4px 0 0" }}>
+                  <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
                     {sheet.description}
                   </p>
                 )}
               </header>
 
               {sheet.cases.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#888" }}>Sem casos nesta folha.</p>
+                <p style={{ fontSize: 13, color: "var(--muted)" }}>Sem casos nesta folha.</p>
               ) : (
                 <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                   {sheet.cases.map((c) => (
@@ -97,7 +96,7 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
                         gridTemplateColumns: "80px 1fr",
                         gap: 12,
                         padding: "8px 0",
-                        borderTop: "1px solid #f0f0f0",
+                        borderTop: "1px solid var(--border)",
                         alignItems: "start",
                       }}
                     >
@@ -106,7 +105,8 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
                           fontSize: 12,
                           fontFamily: "monospace",
                           padding: "2px 6px",
-                          background: "#f5f5f5",
+                          background: "var(--bg-subtle)",
+                          color: "var(--accent)",
                           borderRadius: 4,
                           justifySelf: "start",
                         }}
@@ -114,19 +114,19 @@ export default async function ProjectTestSheetsPage({ params }: Params) {
                         {c.code}
                       </code>
                       <div>
-                        <div style={{ fontWeight: 500, fontSize: 14 }}>{c.title}</div>
+                        <div style={{ fontWeight: 500, fontSize: 14, color: "var(--text)" }}>{c.title}</div>
                         {c.module && (
-                          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                             módulo: {c.module}
                           </div>
                         )}
                         {c.description && (
-                          <p style={{ fontSize: 13, color: "#555", margin: "4px 0 0" }}>
+                          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: "4px 0 0" }}>
                             {c.description}
                           </p>
                         )}
                         {c.expectedResult && (
-                          <p style={{ fontSize: 13, color: "#666", margin: "4px 0 0" }}>
+                          <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
                             <em>Esperado:</em> {c.expectedResult}
                           </p>
                         )}

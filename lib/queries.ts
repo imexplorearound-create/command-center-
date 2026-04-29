@@ -1,6 +1,8 @@
+import { cache } from "react";
 import { getTenantDb } from "./tenant";
 import type { Prisma } from "@prisma/client";
 import type { AuthUser } from "./auth/dal";
+import { firstNonEmptyLine } from "./maestro/briefing/util";
 import type {
   ProjectData,
   ObjectiveData,
@@ -575,6 +577,63 @@ export async function getRecentMaestroActions(
     createdAt: a.createdAt,
   }));
 }
+
+// ─── Briefings ──────────────────────────────────────────────
+
+export interface BriefingListItem {
+  id: string;
+  briefingDate: Date;
+  status: string;
+  channel: string | null;
+  generatedAt: Date;
+  deliveredAt: Date | null;
+  readAt: Date | null;
+  content: string;
+  excerpt: string;
+  errorMessage: string | null;
+}
+
+export async function getBriefingsForUser(
+  userId: string,
+  limit = 30,
+): Promise<BriefingListItem[]> {
+  const db = await getTenantDb();
+  const rows = await db.maestroBriefing.findMany({
+    where: { userId, status: { not: "skipped_empty" } },
+    orderBy: { briefingDate: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      briefingDate: true,
+      status: true,
+      channel: true,
+      generatedAt: true,
+      deliveredAt: true,
+      readAt: true,
+      content: true,
+      errorMessage: true,
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    briefingDate: r.briefingDate,
+    status: r.status,
+    channel: r.channel,
+    generatedAt: r.generatedAt,
+    deliveredAt: r.deliveredAt,
+    readAt: r.readAt,
+    content: r.content,
+    excerpt: firstNonEmptyLine(r.content, 160),
+    errorMessage: r.errorMessage,
+  }));
+}
+
+export const getUnreadBriefingCount = cache(async (userId: string): Promise<number> => {
+  const db = await getTenantDb();
+  return db.maestroBriefing.count({
+    where: { userId, readAt: null, status: "delivered" },
+  });
+});
 
 // ─── Content ────────────────────────────────────────────────
 
